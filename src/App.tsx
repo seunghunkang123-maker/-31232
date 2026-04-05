@@ -247,7 +247,7 @@ function AuthScreen({ onLogin }: { onLogin: (user: any) => void }) {
 function SessionLobby({ user, onSelect }: any) {
   const [sessions, setSessions] = useState<SessionData[]>([]);
   const [newName, setNewName] = useState('');
-  const isDM = user?.user_metadata?.role === 'dm';
+  const isDM = user?.role === 'dm';
 
   const fetchSessions = async () => {
     const { data } = await supabase!.from('sessions').select('*').order('created_at', { ascending: false });
