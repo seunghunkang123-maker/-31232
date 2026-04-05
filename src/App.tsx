@@ -84,13 +84,6 @@ CREATE TABLE public.player_sheets (
     UNIQUE(user_id, session_id)
 );
 
-CREATE TABLE public.wikis (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    content TEXT,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-INSERT INTO public.wikis (content) VALUES ('여기에 캠페인 전반의 세계관, NPC, 범용 키워드 등을 기록하세요.');
-
 CREATE TABLE public.initiatives (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     session_id UUID REFERENCES public.sessions(id) ON DELETE CASCADE,
@@ -104,7 +97,6 @@ ALTER TABLE public.users DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.sessions DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.cards DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.player_sheets DISABLE ROW LEVEL SECURITY;
-ALTER TABLE public.wikis DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.initiatives DISABLE ROW LEVEL SECURITY;
 `}
         </pre>
@@ -119,7 +111,6 @@ function MainApp() {
   const [loading, setLoading] = useState(true);
   const [activeSession, setActiveSession] = useState<SessionData | null>(null);
   const [modalImg, setModalImg] = useState<string | null>(null);
-  const [isWikiOpen, setIsWikiOpen] = useState(false);
 
   useEffect(() => {
     const storedUser = localStorage.getItem('dnd_user');
@@ -142,7 +133,6 @@ function MainApp() {
           <span style={{ color: 'var(--text-muted)', fontSize: '0.9em', marginRight: '10px' }}>
             {user.username} ({user.role === 'dm' ? '마스터' : '플레이어'})
           </span>
-          <button className="btn btn-action" onClick={() => setIsWikiOpen(true)}><BookOpen size={16} style={{ display: 'inline', verticalAlign: 'middle', marginRight: '5px' }}/> 캠페인 위키</button>
           <button className="btn" style={{ background: '#4b5563' }} onClick={() => { 
             setActiveSession(null); 
             localStorage.removeItem('dnd_user');
@@ -159,7 +149,6 @@ function MainApp() {
         <PlayerDashboard session={activeSession} user={user} onBack={() => setActiveSession(null)} openModal={setModalImg} />
       )}
 
-      <WikiPanel isOpen={isWikiOpen} onClose={() => setIsWikiOpen(false)} isDM={activeSession?.dm_id === user.id} />
       <DiceRoller />
 
       {modalImg && (
@@ -661,57 +650,6 @@ function InitiativeTracker({ sessionId, isDM }: { sessionId: string, isDM: boole
         {initiatives.length === 0 && <p style={{ color: 'var(--text-muted)', fontSize: '0.9em', textAlign: 'center', marginTop: '10px' }}>현재 진행 중인 전투가 없습니다.</p>}
       </div>
     </div>
-  );
-}
-
-// --- Wiki Panel ---
-function WikiPanel({ isOpen, onClose, isDM }: any) {
-  const [content, setContent] = useState('');
-
-  const fetchWiki = async () => {
-    const { data } = await supabase!.from('wikis').select('*').limit(1).single();
-    if (data) setContent(data.content);
-  };
-
-  useEffect(() => {
-    if (isOpen) fetchWiki();
-  }, [isOpen]);
-
-  const handleSave = async () => {
-    const { data } = await supabase!.from('wikis').select('id').limit(1).single();
-    if (data) {
-      await supabase!.from('wikis').update({ content }).eq('id', data.id);
-      alert('저장되었습니다.');
-    }
-  };
-
-  return (
-    <>
-      {isOpen && <div className="modal-overlay" onClick={onClose} />}
-      <div className={`wiki-panel ${isOpen ? 'open' : ''}`}>
-        <div className="wiki-header">
-          <h2 style={{ margin: 0, color: 'var(--accent-primary)', fontSize: '1.3em' }}>📖 캠페인 위키</h2>
-          <button className="btn" style={{ background: '#333' }} onClick={onClose}>닫기</button>
-        </div>
-        <div className="wiki-body">
-          {isDM && (
-            <div className="toolbar" style={{ marginBottom: '15px' }}>
-              <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('bold')}><b>B</b></button>
-              <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('italic')}><i>I</i></button>
-              <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('underline')}><u>U</u></button>
-              <button className="btn btn-action" style={{ marginLeft: 'auto' }} onClick={handleSave}><Save size={14} style={{verticalAlign:'middle'}}/> 저장</button>
-            </div>
-          )}
-          <div 
-            className={isDM ? 'editor' : 'editor-content'} 
-            contentEditable={isDM} suppressContentEditableWarning
-            onBlur={e => setContent(e.currentTarget.innerHTML)}
-            dangerouslySetInnerHTML={{ __html: content }}
-            style={{ minHeight: '100%', border: isDM ? '' : 'none', padding: isDM ? '20px' : '0' }}
-          />
-        </div>
-      </div>
-    </>
   );
 }
 
