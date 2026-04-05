@@ -12,7 +12,7 @@ interface CardData {
   img_src?: string; is_revealed: boolean; stats: Stats;
 }
 
-interface SessionData { id: string; name: string; dm_id: string; created_at: string; }
+interface SessionData { id: string; name: string; dm_id: string; created_at: string; background_url?: string; }
 
 interface PlayerSheet {
   id: string; user_id: string; session_id: string; character_name: string; content: string; stats: Stats;
@@ -93,6 +93,7 @@ CREATE TABLE public.initiatives (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
+ALTER TABLE public.sessions ADD COLUMN IF NOT EXISTS background_url TEXT;
 ALTER TABLE public.users DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.sessions DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.cards DISABLE ROW LEVEL SECURITY;
@@ -135,11 +136,25 @@ function MainApp() {
     setLoading(false);
   }, []);
 
+  useEffect(() => {
+    if (!activeSession) return;
+    const channel = supabase!.channel('active_session_sync')
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'sessions', filter: `id=eq.${activeSession.id}` }, (payload) => {
+        setActiveSession(payload.new as SessionData);
+      })
+      .subscribe();
+    return () => { supabase!.removeChannel(channel); };
+  }, [activeSession?.id]);
+
   if (loading) return <div style={{ color: 'white', textAlign: 'center', marginTop: '50px' }}>로딩 중...</div>;
   if (!user) return <AuthScreen onLogin={setUser} />;
 
   return (
-    <div className="app-container">
+    <div className="app-container" style={{
+      backgroundImage: activeSession?.background_url ? `linear-gradient(rgba(15, 23, 42, 0.85), rgba(15, 23, 42, 0.85)), url(${activeSession.background_url})` : 'none',
+      backgroundSize: 'cover', backgroundPosition: 'center', backgroundAttachment: 'fixed',
+      minHeight: '100vh', transition: 'background-image 0.5s ease-in-out'
+    }}>
       <div className="session-bar" style={{ maxWidth: '1200px', margin: '20px auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <h2 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '10px' }}>
           <Swords color="var(--accent-primary)" /> D&D 5e 세션 허브
@@ -392,11 +407,64 @@ function DMDashboard({ session, user, onBack, openModal }: any) {
     }
   };
 
+  const handleBgUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      try {
+        const fileExt = file.name.split('.').pop();
+        const fileName = `bg_${session.id}_${Date.now()}.${fileExt}`;
+        const { error } = await supabase!.storage.from('images').upload(fileName, file);
+        if (error) throw error;
+        const { data: { publicUrl } } = supabase!.storage.from('images').getPublicUrl(fileName);
+        await supabase!.from('sessions').update({ background_url: publicUrl }).eq('id', session.id);
+      } catch (error: any) {
+        alert('배경 업로드 실패: ' + error.message);
+      }
+    }
+  };
+
+  const handleBgRemove = async () => {
+    await supabase!.from('sessions').update({ background_url: null }).eq('id', session.id);
+  };
+
+  const handleMouseOver = (e: React.MouseEvent) => {
+    const target = e.target as HTMLElement;
+    if (target.classList.contains('keyword-memo')) {
+      let memo = target.getAttribute('data-memo');
+      if (!memo) {
+        memo = target.getAttribute('title');
+        if (memo) {
+          target.setAttribute('data-memo', memo);
+          target.removeAttribute('title');
+        }
+      }
+      const card = target.closest('.card');
+      if (memo && card) {
+        const cardRect = card.getBoundingClientRect();
+        const targetRect = target.getBoundingClientRect();
+        const x = Math.min(cardRect.right + 20, window.innerWidth - 270);
+        setHoveredMemo({ text: memo, x, y: targetRect.top });
+      }
+    }
+  };
+
+  const handleMouseOut = (e: React.MouseEvent) => {
+    const target = e.target as HTMLElement;
+    if (target.classList.contains('keyword-memo')) {
+      setHoveredMemo(null);
+    }
+  };
+
   return (
-    <div className="dashboard">
+    <div className="dashboard" onMouseOver={handleMouseOver} onMouseOut={handleMouseOut}>
       <div className="header">
         <h2 style={{ margin: 0, color: 'var(--text-main)' }}>현재 세션: <span style={{ color: 'var(--accent-primary)' }}>{session.name}</span> <span style={{fontSize:'0.6em', color:'var(--text-muted)'}}>(마스터)</span></h2>
-        <button className="btn" style={{ background: '#4b5563' }} onClick={onBack}>← 세션 목록으로</button>
+        <div style={{ display: 'flex', gap: '10px' }}>
+          <input type="file" id="bg-upload" accept="image/*" style={{ display: 'none' }} onChange={handleBgUpload} />
+          <label htmlFor="bg-upload" className="btn btn-action" style={{ cursor: 'pointer', padding: '8px 16px', margin: 0 }}><ImageIcon size={16} style={{verticalAlign:'middle'}}/> 배경 설정</label>
+          {session.background_url && <button className="btn btn-danger" onClick={handleBgRemove}>배경 제거</button>}
+          <button className="btn" style={{ background: '#4b5563' }} onClick={onBack}>← 세션 목록으로</button>
+        </div>
       </div>
 
       <InitiativeTracker sessionId={session.id} isDM={true} />
@@ -503,7 +571,7 @@ function DMCard({ card, updateCard, deleteCard, openModal }: any) {
     const memo = prompt('선택한 단어에 대한 메모를 입력하세요:');
     if (memo) {
       const selectedText = selection.toString();
-      const html = `<span class="keyword-memo" title="${memo.replace(/"/g, '&quot;')}" style="border-bottom: 2px dashed var(--accent-primary); cursor: help; background-color: rgba(59, 130, 246, 0.1); padding: 0 2px; border-radius: 2px;">${selectedText}</span>`;
+      const html = `<span class="keyword-memo" data-memo="${memo.replace(/"/g, '&quot;')}" style="border-bottom: 2px dashed var(--accent-primary); cursor: help; background-color: rgba(59, 130, 246, 0.1); padding: 0 2px; border-radius: 2px;">${selectedText}</span>`;
       document.execCommand('insertHTML', false, html);
       if (editorRef.current) {
         updateCard(card.id, { content: editorRef.current.innerHTML });
@@ -577,6 +645,7 @@ function PlayerDashboard({ session, user, onBack, openModal }: any) {
   const [sheet, setSheet] = useState<PlayerSheet | null>(null);
   const [showLoadModal, setShowLoadModal] = useState(false);
   const [savedSheets, setSavedSheets] = useState<any[]>([]);
+  const [hoveredMemo, setHoveredMemo] = useState<{text: string, x: number, y: number} | null>(null);
 
   // 한글 입력(IME) 끊김 방지를 위한 로컬 상태
   const [localCharName, setLocalCharName] = useState('');
@@ -643,7 +712,7 @@ function PlayerDashboard({ session, user, onBack, openModal }: any) {
     const memo = prompt('선택한 단어에 대한 메모를 입력하세요:');
     if (memo) {
       const selectedText = selection.toString();
-      const html = `<span class="keyword-memo" title="${memo.replace(/"/g, '&quot;')}" style="border-bottom: 2px dashed var(--accent-primary); cursor: help; background-color: rgba(59, 130, 246, 0.1); padding: 0 2px; border-radius: 2px;">${selectedText}</span>`;
+      const html = `<span class="keyword-memo" data-memo="${memo.replace(/"/g, '&quot;')}" style="border-bottom: 2px dashed var(--accent-primary); cursor: help; background-color: rgba(59, 130, 246, 0.1); padding: 0 2px; border-radius: 2px;">${selectedText}</span>`;
       document.execCommand('insertHTML', false, html);
       if (editorRef.current) {
         updateSheet({ content: editorRef.current.innerHTML });
@@ -651,8 +720,36 @@ function PlayerDashboard({ session, user, onBack, openModal }: any) {
     }
   };
 
+  const handleMouseOver = (e: React.MouseEvent) => {
+    const target = e.target as HTMLElement;
+    if (target.classList.contains('keyword-memo')) {
+      let memo = target.getAttribute('data-memo');
+      if (!memo) {
+        memo = target.getAttribute('title');
+        if (memo) {
+          target.setAttribute('data-memo', memo);
+          target.removeAttribute('title');
+        }
+      }
+      const card = target.closest('.card');
+      if (memo && card) {
+        const cardRect = card.getBoundingClientRect();
+        const targetRect = target.getBoundingClientRect();
+        const x = Math.min(cardRect.right + 20, window.innerWidth - 270);
+        setHoveredMemo({ text: memo, x, y: targetRect.top });
+      }
+    }
+  };
+
+  const handleMouseOut = (e: React.MouseEvent) => {
+    const target = e.target as HTMLElement;
+    if (target.classList.contains('keyword-memo')) {
+      setHoveredMemo(null);
+    }
+  };
+
   return (
-    <div className="dashboard">
+    <div className="dashboard" onMouseOver={handleMouseOver} onMouseOut={handleMouseOut}>
       <div className="header">
         <h2 style={{ margin: 0, color: 'var(--text-main)' }}>현재 세션: <span style={{ color: 'var(--accent-primary)' }}>{session.name}</span> <span style={{fontSize:'0.6em', color:'var(--text-muted)'}}>(플레이어)</span></h2>
         <button className="btn" style={{ background: '#4b5563' }} onClick={onBack}>← 세션 목록으로</button>
