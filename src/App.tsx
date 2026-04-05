@@ -46,10 +46,18 @@ function SupabaseSetupScreen() {
 {`-- D&D 5e Session Hub Supabase Schema
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
+CREATE TABLE public.users (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    username TEXT UNIQUE NOT NULL,
+    password TEXT NOT NULL,
+    role TEXT NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
 CREATE TABLE public.sessions (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     name TEXT NOT NULL,
-    dm_id UUID REFERENCES auth.users(id) NOT NULL,
+    dm_id UUID REFERENCES public.users(id) ON DELETE CASCADE NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
@@ -67,7 +75,7 @@ CREATE TABLE public.cards (
 
 CREATE TABLE public.player_sheets (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+    user_id UUID REFERENCES public.users(id) ON DELETE CASCADE,
     session_id UUID REFERENCES public.sessions(id) ON DELETE CASCADE,
     character_name TEXT DEFAULT '새 캐릭터',
     content TEXT,
@@ -91,6 +99,7 @@ CREATE TABLE public.initiatives (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
+ALTER TABLE public.users DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.sessions DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.cards DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.player_sheets DISABLE ROW LEVEL SECURITY;
@@ -112,20 +121,15 @@ function MainApp() {
   const [isWikiOpen, setIsWikiOpen] = useState(false);
 
   useEffect(() => {
-    supabase!.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null);
-      setLoading(false);
-    });
-
-    const { data: { subscription } } = supabase!.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
-    });
-
-    return () => subscription.unsubscribe();
+    const storedUser = localStorage.getItem('dnd_user');
+    if (storedUser) {
+      setUser(JSON.parse(storedUser));
+    }
+    setLoading(false);
   }, []);
 
   if (loading) return <div style={{ color: 'white', textAlign: 'center', marginTop: '50px' }}>로딩 중...</div>;
-  if (!user) return <AuthScreen />;
+  if (!user) return <AuthScreen onLogin={setUser} />;
 
   return (
     <div className="app-container">
@@ -135,10 +139,14 @@ function MainApp() {
         </h2>
         <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
           <span style={{ color: 'var(--text-muted)', fontSize: '0.9em', marginRight: '10px' }}>
-            {user.user_metadata?.username || user.email?.split('@')[0]} ({user.user_metadata?.role === 'dm' ? '마스터' : '플레이어'})
+            {user.username} ({user.role === 'dm' ? '마스터' : '플레이어'})
           </span>
           <button className="btn btn-action" onClick={() => setIsWikiOpen(true)}><BookOpen size={16} style={{ display: 'inline', verticalAlign: 'middle', marginRight: '5px' }}/> 캠페인 위키</button>
-          <button className="btn" style={{ background: '#4b5563' }} onClick={() => { setActiveSession(null); supabase!.auth.signOut(); }}><LogOut size={16} style={{ display: 'inline', verticalAlign: 'middle' }}/></button>
+          <button className="btn" style={{ background: '#4b5563' }} onClick={() => { 
+            setActiveSession(null); 
+            localStorage.removeItem('dnd_user');
+            setUser(null); 
+          }}><LogOut size={16} style={{ display: 'inline', verticalAlign: 'middle' }}/></button>
         </div>
       </div>
 
@@ -163,7 +171,7 @@ function MainApp() {
 }
 
 // --- Auth Screen ---
-function AuthScreen() {
+function AuthScreen({ onLogin }: { onLogin: (user: any) => void }) {
   const [isLogin, setIsLogin] = useState(true);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -177,35 +185,32 @@ function AuthScreen() {
       return;
     }
     setLoading(true);
-    const authEmail = `${username}@dndhub.local`; // 아이디를 가짜 이메일 형식으로 변환하여 사용
     
     try {
       if (isLogin) {
-        const { error } = await supabase!.auth.signInWithPassword({ email: authEmail, password });
-        if (error) throw error;
+        const { data, error } = await supabase!.from('users').select('*').eq('username', username).eq('password', password).maybeSingle();
+        if (error || !data) throw new Error('아이디 또는 비밀번호가 올바르지 않습니다.');
+        
+        localStorage.setItem('dnd_user', JSON.stringify(data));
+        onLogin(data);
       } else {
         if (signupRole === 'dm' && dmCode !== '1234') {
           alert('마스터 생성 암호가 틀렸습니다.');
           setLoading(false);
           return;
         }
-        const { error } = await supabase!.auth.signUp({ 
-          email: authEmail, 
-          password,
-          options: {
-            data: { role: signupRole, username }
-          }
-        });
+        
+        const { data: existing } = await supabase!.from('users').select('id').eq('username', username).maybeSingle();
+        if (existing) throw new Error('이미 존재하는 아이디입니다.');
+
+        const { error } = await supabase!.from('users').insert([{ username, password, role: signupRole }]);
         if (error) throw error;
+        
         alert('회원가입 성공! 로그인해주세요.');
         setIsLogin(true);
       }
     } catch (error: any) {
-      if (error.message.includes('Invalid login credentials')) {
-        alert('아이디 또는 비밀번호가 올바르지 않습니다.');
-      } else {
-        alert(error.message);
-      }
+      alert(error.message);
     } finally {
       setLoading(false);
     }
