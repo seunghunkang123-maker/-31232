@@ -40,6 +40,7 @@ function SupabaseSetupScreen() {
         <ol style={{ lineHeight: '1.8', marginBottom: '20px' }}>
           <li>Supabase 프로젝트를 생성합니다.</li>
           <li><code>.env</code> 파일에 <code>VITE_SUPABASE_URL</code>과 <code>VITE_SUPABASE_ANON_KEY</code>를 입력합니다. (AI Studio Secrets 패널 이용)</li>
+          <li>Supabase 대시보드의 <b>Storage</b> 메뉴에서 <code>images</code>라는 이름의 버킷(Bucket)을 생성하고, <b>Public bucket</b>으로 설정합니다.</li>
           <li>Supabase 대시보드의 SQL Editor에서 아래 스키마를 실행하여 테이블을 생성합니다.</li>
         </ol>
         <pre>
@@ -386,14 +387,27 @@ function DMDashboard({ session, onBack, openModal }: any) {
 
 function DMCard({ card, updateCard, deleteCard, openModal }: any) {
   const [isExpanded, setIsExpanded] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const editorRef = useRef<HTMLDivElement>(null);
 
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      const reader = new FileReader();
-      reader.onload = (ev) => updateCard(card.id, { img_src: ev.target?.result as string });
-      reader.readAsDataURL(file);
+      setUploading(true);
+      try {
+        const fileExt = file.name.split('.').pop();
+        const fileName = `${card.session_id}/${card.id}_${Date.now()}.${fileExt}`;
+        
+        const { error } = await supabase!.storage.from('images').upload(fileName, file);
+        if (error) throw error;
+
+        const { data: { publicUrl } } = supabase!.storage.from('images').getPublicUrl(fileName);
+        updateCard(card.id, { img_src: publicUrl });
+      } catch (error: any) {
+        alert('이미지 업로드 실패: ' + error.message);
+      } finally {
+        setUploading(false);
+      }
     }
   };
 
@@ -421,7 +435,8 @@ function DMCard({ card, updateCard, deleteCard, openModal }: any) {
           {(card.type === 'image' || card.type === 'statblock') && (
             <div style={{ marginBottom: '15px' }}>
               <span style={{ fontSize: '0.8em', color: 'var(--text-muted)' }}>이미지 첨부:</span>
-              <input type="file" accept="image/*" onChange={handleImageUpload} style={{ marginLeft: '10px', color: 'var(--text-main)' }} />
+              <input type="file" accept="image/*" onChange={handleImageUpload} disabled={uploading} style={{ marginLeft: '10px', color: 'var(--text-main)' }} />
+              {uploading && <span style={{ fontSize: '0.8em', color: 'var(--accent-primary)', marginLeft: '10px' }}>업로드 중...</span>}
               {card.img_src && <img src={card.img_src} className="image-preview" onClick={() => openModal(card.img_src)} />}
             </div>
           )}
