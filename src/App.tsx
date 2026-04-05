@@ -135,7 +135,7 @@ function MainApp() {
         </h2>
         <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
           <span style={{ color: 'var(--text-muted)', fontSize: '0.9em', marginRight: '10px' }}>
-            {user.email} ({user.user_metadata?.role === 'dm' ? '마스터' : '플레이어'})
+            {user.user_metadata?.username || user.email?.split('@')[0]} ({user.user_metadata?.role === 'dm' ? '마스터' : '플레이어'})
           </span>
           <button className="btn btn-action" onClick={() => setIsWikiOpen(true)}><BookOpen size={16} style={{ display: 'inline', verticalAlign: 'middle', marginRight: '5px' }}/> 캠페인 위키</button>
           <button className="btn" style={{ background: '#4b5563' }} onClick={() => { setActiveSession(null); supabase!.auth.signOut(); }}><LogOut size={16} style={{ display: 'inline', verticalAlign: 'middle' }}/></button>
@@ -165,17 +165,23 @@ function MainApp() {
 // --- Auth Screen ---
 function AuthScreen() {
   const [isLogin, setIsLogin] = useState(true);
-  const [email, setEmail] = useState('');
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [signupRole, setSignupRole] = useState<'player' | 'dm'>('player');
   const [dmCode, setDmCode] = useState('');
   const [loading, setLoading] = useState(false);
 
   const handleAuth = async () => {
+    if (!username || !password) {
+      alert('아이디와 비밀번호를 입력해주세요.');
+      return;
+    }
     setLoading(true);
+    const authEmail = `${username}@dndhub.local`; // 아이디를 가짜 이메일 형식으로 변환하여 사용
+    
     try {
       if (isLogin) {
-        const { error } = await supabase!.auth.signInWithPassword({ email, password });
+        const { error } = await supabase!.auth.signInWithPassword({ email: authEmail, password });
         if (error) throw error;
       } else {
         if (signupRole === 'dm' && dmCode !== '1234') {
@@ -184,10 +190,10 @@ function AuthScreen() {
           return;
         }
         const { error } = await supabase!.auth.signUp({ 
-          email, 
+          email: authEmail, 
           password,
           options: {
-            data: { role: signupRole }
+            data: { role: signupRole, username }
           }
         });
         if (error) throw error;
@@ -195,7 +201,11 @@ function AuthScreen() {
         setIsLogin(true);
       }
     } catch (error: any) {
-      alert(error.message);
+      if (error.message.includes('Invalid login credentials')) {
+        alert('아이디 또는 비밀번호가 올바르지 않습니다.');
+      } else {
+        alert(error.message);
+      }
     } finally {
       setLoading(false);
     }
@@ -223,7 +233,7 @@ function AuthScreen() {
           </div>
         )}
 
-        <input type="email" placeholder="이메일" value={email} onChange={e => setEmail(e.target.value)} />
+        <input type="text" placeholder="아이디" value={username} onChange={e => setUsername(e.target.value)} />
         <input type="password" placeholder="비밀번호" value={password} onChange={e => setPassword(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleAuth()} />
         
         {!isLogin && signupRole === 'dm' && (
