@@ -626,6 +626,25 @@ function DMCard({ card, updateCard, deleteCard, openModal }: any) {
     }
   };
 
+  const handleEditorClick = (e: React.MouseEvent) => {
+    const target = e.target as HTMLElement;
+    if (target.classList.contains('keyword-memo')) {
+      const currentMemo = target.getAttribute('data-memo') || '';
+      const newMemo = prompt('메모 수정 (내용을 비우면 메모가 삭제됩니다):', currentMemo);
+      if (newMemo !== null) {
+        if (newMemo.trim() === '') {
+          const textNode = document.createTextNode(target.textContent || '');
+          target.parentNode?.replaceChild(textNode, target);
+        } else {
+          target.setAttribute('data-memo', newMemo.replace(/"/g, '&quot;'));
+        }
+        if (editorRef.current) {
+          updateCard(card.id, { content: editorRef.current.innerHTML });
+        }
+      }
+    }
+  };
+
   return (
     <div className={`card ${card.is_revealed ? 'revealed' : ''}`}>
       <div className="card-header" onClick={() => setIsExpanded(!isExpanded)} style={{ cursor: 'pointer' }}>
@@ -677,6 +696,7 @@ function DMCard({ card, updateCard, deleteCard, openModal }: any) {
               <div 
                 ref={editorRef} className="editor" contentEditable suppressContentEditableWarning
                 onBlur={e => updateCard(card.id, { content: e.currentTarget.innerHTML })}
+                onClick={handleEditorClick}
                 dangerouslySetInnerHTML={{ __html: card.content }}
               />
             </>
@@ -767,6 +787,25 @@ function PlayerDashboard({ session, user, onBack, openModal }: any) {
     }
   };
 
+  const handleEditorClick = (e: React.MouseEvent) => {
+    const target = e.target as HTMLElement;
+    if (target.classList.contains('keyword-memo')) {
+      const currentMemo = target.getAttribute('data-memo') || '';
+      const newMemo = prompt('메모 수정 (내용을 비우면 메모가 삭제됩니다):', currentMemo);
+      if (newMemo !== null) {
+        if (newMemo.trim() === '') {
+          const textNode = document.createTextNode(target.textContent || '');
+          target.parentNode?.replaceChild(textNode, target);
+        } else {
+          target.setAttribute('data-memo', newMemo.replace(/"/g, '&quot;'));
+        }
+        if (editorRef.current) {
+          updateSheet({ content: editorRef.current.innerHTML });
+        }
+      }
+    }
+  };
+
   return (
     <div style={{ display: 'flex', gap: '20px', maxWidth: '1400px', margin: '0 auto', alignItems: 'flex-start', padding: '0 20px' }}>
       <div className="dashboard" style={{ flex: 1, minWidth: 0, padding: '20px 0', margin: 0 }}>
@@ -835,6 +874,7 @@ function PlayerDashboard({ session, user, onBack, openModal }: any) {
               ref={editorRef}
               className="editor" contentEditable suppressContentEditableWarning
               onBlur={e => updateSheet({ content: e.currentTarget.innerHTML })}
+              onClick={handleEditorClick}
               dangerouslySetInnerHTML={{ __html: sheet.content }}
               style={{ minHeight: '300px' }}
             />
