@@ -108,6 +108,11 @@ alter publication supabase_realtime add table public.cards;
 alter publication supabase_realtime add table public.initiatives;
 alter publication supabase_realtime add table public.player_sheets;
 alter publication supabase_realtime add table public.sessions;
+
+-- Storage 버킷 생성 (images)
+insert into storage.buckets (id, name, public) values ('images', 'images', true) on conflict do nothing;
+create policy "public_read" on storage.objects for select using ( bucket_id = 'images' );
+create policy "public_insert" on storage.objects for insert with check ( bucket_id = 'images' );
 `}
         </pre>
       </div>
@@ -448,6 +453,13 @@ function DMCard({ card, updateCard, deleteCard, openModal }: any) {
   const [uploading, setUploading] = useState(false);
   const editorRef = useRef<HTMLDivElement>(null);
 
+  // 한글 입력(IME) 끊김 방지를 위한 로컬 상태
+  const [localTitle, setLocalTitle] = useState(card.title);
+  const [localStats, setLocalStats] = useState(card.stats);
+
+  useEffect(() => { setLocalTitle(card.title); }, [card.title]);
+  useEffect(() => { setLocalStats(card.stats); }, [card.stats]);
+
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -457,7 +469,12 @@ function DMCard({ card, updateCard, deleteCard, openModal }: any) {
         const fileName = `${card.session_id}/${card.id}_${Date.now()}.${fileExt}`;
         
         const { error } = await supabase!.storage.from('images').upload(fileName, file);
-        if (error) throw error;
+        if (error) {
+          if (error.message.includes('Bucket not found')) {
+            throw new Error("Supabase Storage에 'images' 버킷이 없습니다. 첫 화면의 SQL을 다시 실행하거나 대시보드에서 생성해주세요.");
+          }
+          throw error;
+        }
 
         const { data: { publicUrl } } = supabase!.storage.from('images').getPublicUrl(fileName);
         updateCard(card.id, { img_src: publicUrl });
@@ -469,8 +486,29 @@ function DMCard({ card, updateCard, deleteCard, openModal }: any) {
     }
   };
 
-  const updateStat = (stat: keyof Stats, val: number) => {
-    updateCard(card.id, { stats: { ...card.stats, [stat]: val } });
+  const handleStatChange = (stat: keyof Stats, val: number) => {
+    setLocalStats({ ...localStats, [stat]: val });
+  };
+
+  const handleStatBlur = () => {
+    updateCard(card.id, { stats: localStats });
+  };
+
+  const addKeywordMemo = () => {
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
+      alert('메모를 추가할 단어를 드래그해서 선택해주세요.');
+      return;
+    }
+    const memo = prompt('선택한 단어에 대한 메모를 입력하세요:');
+    if (memo) {
+      const selectedText = selection.toString();
+      const html = `<span class="keyword-memo" title="${memo.replace(/"/g, '&quot;')}" style="border-bottom: 2px dashed var(--accent-primary); cursor: help; background-color: rgba(59, 130, 246, 0.1); padding: 0 2px; border-radius: 2px;">${selectedText}</span>`;
+      document.execCommand('insertHTML', false, html);
+      if (editorRef.current) {
+        updateCard(card.id, { content: editorRef.current.innerHTML });
+      }
+    }
   };
 
   return (
@@ -478,7 +516,7 @@ function DMCard({ card, updateCard, deleteCard, openModal }: any) {
       <div className="card-header" onClick={() => setIsExpanded(!isExpanded)} style={{ cursor: 'pointer' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', width: '60%' }} onClick={e => e.stopPropagation()}>
           <span style={{ color: 'var(--accent-primary)' }}>{isExpanded ? '▼' : '▶'}</span>
-          <input type="text" className="card-title" value={card.title} onChange={e => updateCard(card.id, { title: e.target.value })} style={{ width: '100%' }} />
+          <input type="text" className="card-title" value={localTitle} onChange={e => setLocalTitle(e.target.value)} onBlur={() => { if (localTitle !== card.title) updateCard(card.id, { title: localTitle }) }} style={{ width: '100%' }} />
         </div>
         <div onClick={e => e.stopPropagation()}>
           <button className={`btn btn-reveal ${card.is_revealed ? 'active' : ''}`} onClick={() => updateCard(card.id, { is_revealed: !card.is_revealed })}>
@@ -504,7 +542,7 @@ function DMCard({ card, updateCard, deleteCard, openModal }: any) {
               {(['str', 'dex', 'con', 'int', 'wis', 'cha'] as const).map(stat => (
                 <div className="stat-box" key={stat}>
                   <span className="stat-name">{stat.toUpperCase()}</span>
-                  <input type="number" className="stat-input" value={card.stats[stat]} onChange={e => updateStat(stat, parseInt(e.target.value) || 0)} />
+                  <input type="number" className="stat-input" value={localStats[stat]} onChange={e => handleStatChange(stat, parseInt(e.target.value) || 0)} onBlur={handleStatBlur} />
                 </div>
               ))}
             </div>
@@ -518,6 +556,7 @@ function DMCard({ card, updateCard, deleteCard, openModal }: any) {
                 <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('underline')}><u>U</u></button>
                 <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('foreColor', false, '#ef4444')} style={{ color: 'var(--accent-danger)' }}>Red</button>
                 <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('foreColor', false, '#3b82f6')} style={{ color: 'var(--accent-primary)' }}>Blue</button>
+                <button onMouseDown={e => { e.preventDefault(); addKeywordMemo(); }} style={{ marginLeft: 'auto', background: 'var(--bg-secondary)', color: 'var(--text-main)' }}>📝 키워드 메모</button>
               </div>
               <div 
                 ref={editorRef} className="editor" contentEditable suppressContentEditableWarning
@@ -538,6 +577,11 @@ function PlayerDashboard({ session, user, onBack, openModal }: any) {
   const [sheet, setSheet] = useState<PlayerSheet | null>(null);
   const [showLoadModal, setShowLoadModal] = useState(false);
   const [savedSheets, setSavedSheets] = useState<any[]>([]);
+
+  // 한글 입력(IME) 끊김 방지를 위한 로컬 상태
+  const [localCharName, setLocalCharName] = useState('');
+  const [localStats, setLocalStats] = useState<Stats | null>(null);
+  const editorRef = useRef<HTMLDivElement>(null);
 
   const fetchCards = async () => {
     const { data } = await supabase!.from('cards').select('*').eq('session_id', session.id).order('created_at', { ascending: false });
@@ -572,6 +616,13 @@ function PlayerDashboard({ session, user, onBack, openModal }: any) {
     return () => { supabase!.removeChannel(channel); };
   }, [session.id]);
 
+  useEffect(() => {
+    if (sheet) {
+      setLocalCharName(sheet.character_name);
+      setLocalStats(sheet.stats);
+    }
+  }, [sheet]);
+
   const updateSheet = async (updates: Partial<PlayerSheet>) => {
     if (!sheet) return;
     setSheet({ ...sheet, ...updates });
@@ -581,6 +632,23 @@ function PlayerDashboard({ session, user, onBack, openModal }: any) {
   const getModifier = (score: number) => {
     let mod = Math.floor((score - 10) / 2);
     return mod >= 0 ? `+${mod}` : mod;
+  };
+
+  const addKeywordMemo = () => {
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
+      alert('메모를 추가할 단어를 드래그해서 선택해주세요.');
+      return;
+    }
+    const memo = prompt('선택한 단어에 대한 메모를 입력하세요:');
+    if (memo) {
+      const selectedText = selection.toString();
+      const html = `<span class="keyword-memo" title="${memo.replace(/"/g, '&quot;')}" style="border-bottom: 2px dashed var(--accent-primary); cursor: help; background-color: rgba(59, 130, 246, 0.1); padding: 0 2px; border-radius: 2px;">${selectedText}</span>`;
+      document.execCommand('insertHTML', false, html);
+      if (editorRef.current) {
+        updateSheet({ content: editorRef.current.innerHTML });
+      }
+    }
   };
 
   return (
@@ -619,11 +687,11 @@ function PlayerDashboard({ session, user, onBack, openModal }: any) {
           ))}
         </div>
 
-        {sheet && (
+        {sheet && localStats && (
           <div className="card" style={{ flex: '1 1 400px', position: 'sticky', top: '20px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '20px' }}>
               <User color="var(--accent-primary)" />
-              <input type="text" value={sheet.character_name} onChange={e => updateSheet({ character_name: e.target.value })} style={{ background: 'transparent', border: 'none', color: 'var(--accent-primary)', fontSize: '1.3em', fontWeight: 'bold', outline: 'none', width: '100%' }} />
+              <input type="text" value={localCharName} onChange={e => setLocalCharName(e.target.value)} onBlur={() => { if (localCharName !== sheet.character_name) updateSheet({ character_name: localCharName }) }} style={{ background: 'transparent', border: 'none', color: 'var(--accent-primary)', fontSize: '1.3em', fontWeight: 'bold', outline: 'none', width: '100%' }} />
               <button className="btn btn-action" style={{ padding: '6px 12px', fontSize: '0.9em', whiteSpace: 'nowrap' }} onClick={() => { setShowLoadModal(true); fetchSavedSheets(); }}><Database size={14} style={{verticalAlign:'middle'}}/> 불러오기</button>
             </div>
             
@@ -631,8 +699,8 @@ function PlayerDashboard({ session, user, onBack, openModal }: any) {
               {(['str', 'dex', 'con', 'int', 'wis', 'cha'] as const).map(stat => (
                 <div className="stat-box" key={stat}>
                   <span className="stat-name">{stat.toUpperCase()}</span>
-                  <input type="number" className="stat-input" value={sheet.stats[stat]} onChange={e => updateSheet({ stats: { ...sheet.stats, [stat]: parseInt(e.target.value) || 0 } })} />
-                  <span className="stat-val" style={{ fontSize: '0.9em', color: 'var(--text-muted)' }}>({getModifier(sheet.stats[stat])})</span>
+                  <input type="number" className="stat-input" value={localStats[stat]} onChange={e => setLocalStats({ ...localStats, [stat]: parseInt(e.target.value) || 0 })} onBlur={() => updateSheet({ stats: localStats })} />
+                  <span className="stat-val" style={{ fontSize: '0.9em', color: 'var(--text-muted)' }}>({getModifier(localStats[stat])})</span>
                 </div>
               ))}
             </div>
@@ -641,8 +709,10 @@ function PlayerDashboard({ session, user, onBack, openModal }: any) {
               <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('bold')}><b>B</b></button>
               <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('italic')}><i>I</i></button>
               <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('underline')}><u>U</u></button>
+              <button onMouseDown={e => { e.preventDefault(); addKeywordMemo(); }} style={{ marginLeft: 'auto', background: 'var(--bg-secondary)', color: 'var(--text-main)' }}>📝 키워드 메모</button>
             </div>
             <div 
+              ref={editorRef}
               className="editor" contentEditable suppressContentEditableWarning
               onBlur={e => updateSheet({ content: e.currentTarget.innerHTML })}
               dangerouslySetInnerHTML={{ __html: sheet.content }}
