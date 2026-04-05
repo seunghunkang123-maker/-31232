@@ -98,6 +98,16 @@ ALTER TABLE public.sessions DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.cards DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.player_sheets DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.initiatives DISABLE ROW LEVEL SECURITY;
+
+-- 실시간 동기화를 위한 설정 (필수)
+begin;
+  drop publication if exists supabase_realtime;
+  create publication supabase_realtime;
+commit;
+alter publication supabase_realtime add table public.cards;
+alter publication supabase_realtime add table public.initiatives;
+alter publication supabase_realtime add table public.player_sheets;
+alter publication supabase_realtime add table public.sessions;
 `}
         </pre>
       </div>
@@ -144,7 +154,7 @@ function MainApp() {
       {!activeSession ? (
         <SessionLobby user={user} onSelect={setActiveSession} />
       ) : activeSession.dm_id === user.id ? (
-        <DMDashboard session={activeSession} onBack={() => setActiveSession(null)} openModal={setModalImg} />
+        <DMDashboard session={activeSession} user={user} onBack={() => setActiveSession(null)} openModal={setModalImg} />
       ) : (
         <PlayerDashboard session={activeSession} user={user} onBack={() => setActiveSession(null)} openModal={setModalImg} />
       )}
@@ -254,7 +264,13 @@ function SessionLobby({ user, onSelect }: any) {
     if (data) setSessions(data);
   };
 
-  useEffect(() => { fetchSessions(); }, []);
+  useEffect(() => { 
+    fetchSessions(); 
+    const channel = supabase!.channel('sessions_sync')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'sessions' }, fetchSessions)
+      .subscribe();
+    return () => { supabase!.removeChannel(channel); };
+  }, []);
 
   const handleCreate = async () => {
     if (!newName) return;
@@ -312,12 +328,31 @@ function SessionLobby({ user, onSelect }: any) {
 }
 
 // --- DM Dashboard ---
-function DMDashboard({ session, onBack, openModal }: any) {
+function DMDashboard({ session, user, onBack, openModal }: any) {
   const [cards, setCards] = useState<CardData[]>([]);
+  const [showLoadModal, setShowLoadModal] = useState(false);
+  const [savedMonsters, setSavedMonsters] = useState<any[]>([]);
 
   const fetchCards = async () => {
     const { data } = await supabase!.from('cards').select('*').eq('session_id', session.id).order('created_at', { ascending: false });
     if (data) setCards(data);
+  };
+
+  const fetchSavedMonsters = async () => {
+    const { data: sessions } = await supabase!.from('sessions').select('id, name').eq('dm_id', user.id);
+    if (sessions && sessions.length > 0) {
+      const sessionIds = sessions.map((s: any) => s.id);
+      const { data: cards } = await supabase!.from('cards')
+        .select('*')
+        .in('session_id', sessionIds)
+        .eq('type', 'statblock');
+      
+      const cardsWithSession = cards?.map((c: any) => ({
+        ...c,
+        session_name: sessions.find((s: any) => s.id === c.session_id)?.name
+      }));
+      setSavedMonsters(cardsWithSession || []);
+    }
   };
 
   useEffect(() => {
@@ -337,15 +372,18 @@ function DMDashboard({ session, onBack, openModal }: any) {
       stats: { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 }
     };
     await supabase!.from('cards').insert([newCard]);
+    fetchCards();
   };
 
   const updateCard = async (id: string, updates: Partial<CardData>) => {
     await supabase!.from('cards').update(updates).eq('id', id);
+    fetchCards();
   };
 
   const deleteCard = async (id: string) => {
     if (confirm('정말 삭제하시겠습니까?')) {
       await supabase!.from('cards').delete().eq('id', id);
+      fetchCards();
     }
   };
 
@@ -359,6 +397,7 @@ function DMDashboard({ session, onBack, openModal }: any) {
       <InitiativeTracker sessionId={session.id} isDM={true} />
 
       <div className="toolbar" style={{ marginBottom: '20px', justifyContent: 'center', background: 'transparent', border: 'none' }}>
+        <button className="btn btn-action" onClick={() => { setShowLoadModal(true); fetchSavedMonsters(); }}><Database size={16} style={{verticalAlign:'middle'}}/> 몬스터 불러오기</button>
         <button className="btn btn-add" onClick={() => addCard('statblock')}><User size={16} style={{verticalAlign:'middle'}}/> 몬스터/NPC 추가</button>
         <button className="btn btn-add" onClick={() => addCard('image')}><ImageIcon size={16} style={{verticalAlign:'middle'}}/> 지도/이미지 추가</button>
         <button className="btn btn-add" onClick={() => addCard('text')}><FileText size={16} style={{verticalAlign:'middle'}}/> 텍스트 노트 추가</button>
@@ -370,6 +409,36 @@ function DMDashboard({ session, onBack, openModal }: any) {
         ))}
         {cards.length === 0 && <p style={{ textAlign: 'center', width: '100%', color: 'var(--text-muted)' }}>추가된 카드가 없습니다.</p>}
       </div>
+
+      {showLoadModal && (
+        <div className="modal-overlay" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.7)', zIndex: 1000, display: 'flex', justifyContent: 'center', alignItems: 'center' }} onClick={() => setShowLoadModal(false)}>
+          <div className="card" style={{ width: '90%', maxWidth: '500px', maxHeight: '80vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
+            <h3 style={{ marginTop: 0, color: 'var(--accent-primary)' }}>저장된 몬스터 불러오기</h3>
+            <p style={{ fontSize: '0.9em', color: 'var(--text-muted)' }}>다른 세션에서 만들었던 몬스터를 복사해옵니다.</p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '15px' }}>
+              {savedMonsters.map(m => (
+                <div key={m.id} className="init-item" style={{ cursor: 'pointer' }} onClick={() => {
+                  const newCard = {
+                    session_id: session.id, type: 'statblock',
+                    title: m.title, content: m.content, img_src: m.img_src,
+                    is_revealed: false, stats: m.stats
+                  };
+                  supabase!.from('cards').insert([newCard]).then(() => fetchCards());
+                  setShowLoadModal(false);
+                }}>
+                  <div>
+                    <strong>{m.title}</strong>
+                    <div style={{ fontSize: '0.8em', color: 'var(--text-muted)' }}>from {m.session_name}</div>
+                  </div>
+                  <Plus size={16} />
+                </div>
+              ))}
+              {savedMonsters.length === 0 && <p style={{ color: 'var(--text-muted)', textAlign: 'center' }}>저장된 몬스터가 없습니다.</p>}
+            </div>
+            <button className="btn" style={{ width: '100%', marginTop: '20px', background: '#4b5563' }} onClick={() => setShowLoadModal(false)}>닫기</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -467,6 +536,8 @@ function DMCard({ card, updateCard, deleteCard, openModal }: any) {
 function PlayerDashboard({ session, user, onBack, openModal }: any) {
   const [cards, setCards] = useState<CardData[]>([]);
   const [sheet, setSheet] = useState<PlayerSheet | null>(null);
+  const [showLoadModal, setShowLoadModal] = useState(false);
+  const [savedSheets, setSavedSheets] = useState<any[]>([]);
 
   const fetchCards = async () => {
     const { data } = await supabase!.from('cards').select('*').eq('session_id', session.id).order('created_at', { ascending: false });
@@ -483,11 +554,20 @@ function PlayerDashboard({ session, user, onBack, openModal }: any) {
     setSheet(data);
   };
 
+  const fetchSavedSheets = async () => {
+    const { data } = await supabase!.from('player_sheets')
+      .select('*, sessions(name)')
+      .eq('user_id', user.id)
+      .neq('session_id', session.id);
+    if (data) setSavedSheets(data);
+  };
+
   useEffect(() => {
     fetchCards();
     fetchSheet();
     const channel = supabase!.channel('player_sync')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'cards', filter: `session_id=eq.${session.id}` }, fetchCards)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'player_sheets', filter: `session_id=eq.${session.id}` }, fetchSheet)
       .subscribe();
     return () => { supabase!.removeChannel(channel); };
   }, [session.id]);
@@ -544,6 +624,7 @@ function PlayerDashboard({ session, user, onBack, openModal }: any) {
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '20px' }}>
               <User color="var(--accent-primary)" />
               <input type="text" value={sheet.character_name} onChange={e => updateSheet({ character_name: e.target.value })} style={{ background: 'transparent', border: 'none', color: 'var(--accent-primary)', fontSize: '1.3em', fontWeight: 'bold', outline: 'none', width: '100%' }} />
+              <button className="btn btn-action" style={{ padding: '6px 12px', fontSize: '0.9em', whiteSpace: 'nowrap' }} onClick={() => { setShowLoadModal(true); fetchSavedSheets(); }}><Database size={14} style={{verticalAlign:'middle'}}/> 불러오기</button>
             </div>
             
             <div className="stats-grid" style={{ marginBottom: '20px' }}>
@@ -570,6 +651,33 @@ function PlayerDashboard({ session, user, onBack, openModal }: any) {
           </div>
         )}
       </div>
+
+      {showLoadModal && (
+        <div className="modal-overlay" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.7)', zIndex: 1000, display: 'flex', justifyContent: 'center', alignItems: 'center' }} onClick={() => setShowLoadModal(false)}>
+          <div className="card" style={{ width: '90%', maxWidth: '500px', maxHeight: '80vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
+            <h3 style={{ marginTop: 0, color: 'var(--accent-primary)' }}>내 캐릭터 불러오기</h3>
+            <p style={{ fontSize: '0.9em', color: 'var(--text-muted)' }}>다른 세션에서 사용했던 캐릭터 정보를 덮어씌웁니다.</p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '15px' }}>
+              {savedSheets.map(s => (
+                <div key={s.id} className="init-item" style={{ cursor: 'pointer' }} onClick={() => {
+                  if (confirm(`'${s.character_name}' 캐릭터 정보를 현재 시트에 덮어씌우시겠습니까?`)) {
+                    updateSheet({ character_name: s.character_name, content: s.content, stats: s.stats });
+                    setShowLoadModal(false);
+                  }
+                }}>
+                  <div>
+                    <strong>{s.character_name}</strong>
+                    <div style={{ fontSize: '0.8em', color: 'var(--text-muted)' }}>from {s.sessions?.name || '알 수 없는 세션'}</div>
+                  </div>
+                  <Plus size={16} />
+                </div>
+              ))}
+              {savedSheets.length === 0 && <p style={{ color: 'var(--text-muted)', textAlign: 'center' }}>다른 세션에 저장된 캐릭터가 없습니다.</p>}
+            </div>
+            <button className="btn" style={{ width: '100%', marginTop: '20px', background: '#4b5563' }} onClick={() => setShowLoadModal(false)}>닫기</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -597,10 +705,19 @@ function InitiativeTracker({ sessionId, isDM }: { sessionId: string, isDM: boole
     if (!newName || !newScore) return;
     await supabase!.from('initiatives').insert([{ session_id: sessionId, name: newName, score: parseInt(newScore) }]);
     setNewName(''); setNewScore('');
+    fetchInit();
   };
 
   const handleDelete = async (id: string) => {
     await supabase!.from('initiatives').delete().eq('id', id);
+    fetchInit();
+  };
+
+  const handleStartCombat = async () => {
+    if (initiatives.length === 0) return;
+    await supabase!.from('initiatives').update({ is_active: false }).eq('session_id', sessionId);
+    await supabase!.from('initiatives').update({ is_active: true }).eq('id', initiatives[0].id);
+    fetchInit();
   };
 
   const handleNextTurn = async () => {
@@ -611,21 +728,35 @@ function InitiativeTracker({ sessionId, isDM }: { sessionId: string, isDM: boole
     // Reset all, then set next
     await supabase!.from('initiatives').update({ is_active: false }).eq('session_id', sessionId);
     await supabase!.from('initiatives').update({ is_active: true }).eq('id', initiatives[nextIdx].id);
+    fetchInit();
   };
 
   const handleClear = async () => {
     if (confirm('전투를 종료하고 모든 우선권을 삭제하시겠습니까?')) {
       await supabase!.from('initiatives').delete().eq('session_id', sessionId);
+      fetchInit();
     }
   };
+
+  const hasActive = initiatives.some(i => i.is_active);
+
+  if (!isDM && !hasActive) {
+    return null;
+  }
 
   return (
     <div className="initiative-tracker">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-        <h3 style={{ margin: 0, color: 'var(--accent-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}><Swords size={20}/> 전투 우선권 (Initiative)</h3>
+        <h3 style={{ margin: 0, color: 'var(--accent-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <Swords size={20}/> 전투 우선권 (Initiative) {hasActive && <span style={{fontSize: '0.6em', color: 'var(--accent-danger)'}}>⚔️ 전투 진행 중</span>}
+        </h3>
         {isDM && (
           <div>
-            <button className="btn btn-action" onClick={handleNextTurn} style={{ marginRight: '10px' }}>다음 턴 ⏭️</button>
+            {!hasActive ? (
+              <button className="btn btn-action" onClick={handleStartCombat} style={{ marginRight: '10px', background: 'var(--accent-danger)' }}>전투 개시!</button>
+            ) : (
+              <button className="btn btn-action" onClick={handleNextTurn} style={{ marginRight: '10px' }}>다음 턴 ⏭️</button>
+            )}
             <button className="btn btn-danger" onClick={handleClear}>전투 종료</button>
           </div>
         )}
