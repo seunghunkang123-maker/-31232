@@ -1,143 +1,158 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { supabase, isSupabaseConfigured } from './lib/supabase';
+import { Dices, Swords, User, LogOut, Plus, Trash2, Eye, EyeOff, BookOpen, Save, Image as ImageIcon, FileText, Database } from 'lucide-react';
 
 // --- Types ---
 type CardType = 'statblock' | 'image' | 'text';
 
-interface Stats {
-  str: number; dex: number; con: number; int: number; wis: number; cha: number;
-}
+interface Stats { str: number; dex: number; con: number; int: number; wis: number; cha: number; }
 
 interface CardData {
-  id: string;
-  type: CardType;
-  title: string;
-  content: string;
-  imgSrc?: string;
-  isRevealed: boolean;
-  stats: Stats;
+  id: string; session_id: string; type: CardType; title: string; content: string;
+  img_src?: string; is_revealed: boolean; stats: Stats;
 }
 
-// --- Main App Component ---
+interface SessionData { id: string; name: string; dm_id: string; created_at: string; }
+
+interface PlayerSheet {
+  id: string; user_id: string; session_id: string; character_name: string; content: string; stats: Stats;
+}
+
+interface Initiative { id: string; name: string; score: number; is_active: boolean; }
+
+// --- Main Entry ---
 export default function App() {
-  const [role, setRole] = useState<'dm' | 'player' | null>(null);
-  const [password, setPassword] = useState('');
-  const [cards, setCards] = useState<CardData[]>([]);
-  const [playerSheet, setPlayerSheet] = useState<string>('');
-  const [playerStats, setPlayerStats] = useState<Stats>({ str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 });
-  const [gimmicks, setGimmicks] = useState<string>('여기에 세션의 특별한 기믹이나 현재 걸려있는 상태이상을 기록하세요.');
+  if (!isSupabaseConfigured) {
+    return <SupabaseSetupScreen />;
+  }
+  return <MainApp />;
+}
+
+// --- Setup Screen ---
+function SupabaseSetupScreen() {
+  return (
+    <div className="setup-screen">
+      <div className="setup-card">
+        <h1><Database size={32} /> Supabase 연동 준비 완료</h1>
+        <p style={{ color: 'var(--text-muted)', marginBottom: '20px' }}>
+          앱을 정상적으로 실행하려면 Supabase 프로젝트 설정이 필요합니다. 다음 단계를 완료해주세요.
+        </p>
+        <ol style={{ lineHeight: '1.8', marginBottom: '20px' }}>
+          <li>Supabase 프로젝트를 생성합니다.</li>
+          <li><code>.env</code> 파일에 <code>VITE_SUPABASE_URL</code>과 <code>VITE_SUPABASE_ANON_KEY</code>를 입력합니다. (AI Studio Secrets 패널 이용)</li>
+          <li>Supabase 대시보드의 SQL Editor에서 아래 스키마를 실행하여 테이블을 생성합니다.</li>
+        </ol>
+        <pre>
+{`-- D&D 5e Session Hub Supabase Schema
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+CREATE TABLE public.sessions (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    name TEXT NOT NULL,
+    dm_id UUID REFERENCES auth.users(id) NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE TABLE public.cards (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    session_id UUID REFERENCES public.sessions(id) ON DELETE CASCADE,
+    type TEXT NOT NULL,
+    title TEXT NOT NULL,
+    content TEXT,
+    img_src TEXT,
+    is_revealed BOOLEAN DEFAULT FALSE,
+    stats JSONB DEFAULT '{"str": 10, "dex": 10, "con": 10, "int": 10, "wis": 10, "cha": 10}'::jsonb,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE TABLE public.player_sheets (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+    session_id UUID REFERENCES public.sessions(id) ON DELETE CASCADE,
+    character_name TEXT DEFAULT '새 캐릭터',
+    content TEXT,
+    stats JSONB DEFAULT '{"str": 10, "dex": 10, "con": 10, "int": 10, "wis": 10, "cha": 10}'::jsonb,
+    UNIQUE(user_id, session_id)
+);
+
+CREATE TABLE public.wikis (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    content TEXT,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+INSERT INTO public.wikis (content) VALUES ('여기에 캠페인 전반의 세계관, NPC, 범용 키워드 등을 기록하세요.');
+
+CREATE TABLE public.initiatives (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    session_id UUID REFERENCES public.sessions(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    score INTEGER NOT NULL,
+    is_active BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+ALTER TABLE public.sessions DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.cards DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.player_sheets DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.wikis DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.initiatives DISABLE ROW LEVEL SECURITY;
+`}
+        </pre>
+      </div>
+    </div>
+  );
+}
+
+// --- Main App Logic ---
+function MainApp() {
+  const [user, setUser] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [activeSession, setActiveSession] = useState<SessionData | null>(null);
   const [modalImg, setModalImg] = useState<string | null>(null);
+  const [isWikiOpen, setIsWikiOpen] = useState(false);
 
-  // Load data from localStorage on mount
   useEffect(() => {
-    const savedCards = localStorage.getItem('dnd_cards_adv');
-    if (savedCards) setCards(JSON.parse(savedCards));
-    
-    const savedSheet = localStorage.getItem('dnd_player_sheet_adv');
-    if (savedSheet) setPlayerSheet(savedSheet);
+    supabase!.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null);
+      setLoading(false);
+    });
 
-    const savedStats = localStorage.getItem('dnd_player_stats_adv');
-    if (savedStats) setPlayerStats(JSON.parse(savedStats));
+    const { data: { subscription } } = supabase!.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+    });
 
-    const savedGimmicks = localStorage.getItem('dnd_gimmicks_adv');
-    if (savedGimmicks) setGimmicks(savedGimmicks);
-
-    // Listen for storage changes to sync across tabs/windows
-    const handleStorage = (e: StorageEvent) => {
-      if (e.key === 'dnd_cards_adv' && e.newValue) setCards(JSON.parse(e.newValue));
-      if (e.key === 'dnd_gimmicks_adv' && e.newValue) setGimmicks(e.newValue);
-    };
-    window.addEventListener('storage', handleStorage);
-    return () => window.removeEventListener('storage', handleStorage);
+    return () => subscription.unsubscribe();
   }, []);
 
-  // Save cards to localStorage whenever they change
-  useEffect(() => {
-    localStorage.setItem('dnd_cards_adv', JSON.stringify(cards));
-  }, [cards]);
-
-  // Save gimmicks to localStorage
-  useEffect(() => {
-    localStorage.setItem('dnd_gimmicks_adv', gimmicks);
-  }, [gimmicks]);
-
-  const handleLogin = (selectedRole: 'dm' | 'player') => {
-    if (selectedRole === 'dm' && password === '1234') {
-      setRole('dm');
-    } else if (selectedRole === 'player') {
-      setRole('player');
-    } else {
-      alert('비밀번호가 틀렸습니다.');
-    }
-  };
-
-  // --- DM Functions ---
-  const addCard = (type: CardType) => {
-    const newCard: CardData = {
-      id: Date.now().toString(),
-      type,
-      title: type === 'statblock' ? '새 몬스터' : type === 'image' ? '새 이미지' : '새 텍스트',
-      content: type === 'statblock' ? '<b>방어도</b> 10<br><b>HP</b> 10 (2d8)<br><b>이동 속도</b> 30ft<hr><b>행동</b><br>공격: +2 명중, 1d6 피해.' : '',
-      isRevealed: false,
-      stats: { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 }
-    };
-    setCards([newCard, ...cards]);
-  };
-
-  const updateCard = (id: string, updates: Partial<CardData>) => {
-    setCards(cards.map(c => c.id === id ? { ...c, ...updates } : c));
-  };
-
-  const deleteCard = (id: string) => {
-    if (confirm('정말 삭제하시겠습니까?')) {
-      setCards(cards.filter(c => c.id !== id));
-    }
-  };
-
-  const updateStat = (id: string, stat: keyof Stats, val: number) => {
-    setCards(cards.map(c => {
-      if (c.id === id) {
-        return { ...c, stats: { ...c.stats, [stat]: val } };
-      }
-      return c;
-    }));
-  };
-
-  // --- Render ---
-  if (!role) {
-    return <LoginScreen onLogin={handleLogin} password={password} setPassword={setPassword} />;
-  }
+  if (loading) return <div style={{ color: 'white', textAlign: 'center', marginTop: '50px' }}>로딩 중...</div>;
+  if (!user) return <AuthScreen />;
 
   return (
     <div className="app-container">
-      <div className="session-bar" style={{ maxWidth: '1200px', margin: '20px auto', display: 'flex', justifyContent: 'space-between' }}>
-        <h2 style={{ margin: 0 }}>D&D 5e 세션 허브 ({role === 'dm' ? '마스터' : '플레이어'})</h2>
-        <button className="btn" style={{ background: '#4b5563' }} onClick={() => setRole(null)}>로그아웃</button>
+      <div className="session-bar" style={{ maxWidth: '1200px', margin: '20px auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <h2 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <Swords color="var(--accent-primary)" /> D&D 5e 세션 허브
+        </h2>
+        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+          <span style={{ color: 'var(--text-muted)', fontSize: '0.9em', marginRight: '10px' }}>
+            {user.email} ({user.user_metadata?.role === 'dm' ? '마스터' : '플레이어'})
+          </span>
+          <button className="btn btn-action" onClick={() => setIsWikiOpen(true)}><BookOpen size={16} style={{ display: 'inline', verticalAlign: 'middle', marginRight: '5px' }}/> 캠페인 위키</button>
+          <button className="btn" style={{ background: '#4b5563' }} onClick={() => { setActiveSession(null); supabase!.auth.signOut(); }}><LogOut size={16} style={{ display: 'inline', verticalAlign: 'middle' }}/></button>
+        </div>
       </div>
 
-      {role === 'dm' ? (
-        <DMDashboard 
-          cards={cards} 
-          addCard={addCard} 
-          updateCard={updateCard} 
-          updateStat={updateStat} 
-          deleteCard={deleteCard} 
-          gimmicks={gimmicks}
-          setGimmicks={setGimmicks}
-          openModal={setModalImg}
-        />
+      {!activeSession ? (
+        <SessionLobby user={user} onSelect={setActiveSession} />
+      ) : activeSession.dm_id === user.id ? (
+        <DMDashboard session={activeSession} onBack={() => setActiveSession(null)} openModal={setModalImg} />
       ) : (
-        <PlayerDashboard 
-          cards={cards} 
-          playerSheet={playerSheet} 
-          setPlayerSheet={setPlayerSheet} 
-          playerStats={playerStats}
-          setPlayerStats={setPlayerStats}
-          gimmicks={gimmicks}
-          openModal={setModalImg}
-        />
+        <PlayerDashboard session={activeSession} user={user} onBack={() => setActiveSession(null)} openModal={setModalImg} />
       )}
 
-      {/* Image Modal */}
+      <WikiPanel isOpen={isWikiOpen} onClose={() => setIsWikiOpen(false)} isDM={activeSession?.dm_id === user.id} />
+      <DiceRoller />
+
       {modalImg && (
         <div id="image-modal" className="show" onClick={() => setModalImg(null)}>
           <img id="modal-img" src={modalImg} onClick={e => e.stopPropagation()} />
@@ -147,76 +162,206 @@ export default function App() {
   );
 }
 
-// --- Components ---
+// --- Auth Screen ---
+function AuthScreen() {
+  const [isLogin, setIsLogin] = useState(true);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [signupRole, setSignupRole] = useState<'player' | 'dm'>('player');
+  const [dmCode, setDmCode] = useState('');
+  const [loading, setLoading] = useState(false);
 
-function LoginScreen({ onLogin, password, setPassword }: any) {
+  const handleAuth = async () => {
+    setLoading(true);
+    try {
+      if (isLogin) {
+        const { error } = await supabase!.auth.signInWithPassword({ email, password });
+        if (error) throw error;
+      } else {
+        if (signupRole === 'dm' && dmCode !== '1234') {
+          alert('마스터 생성 암호가 틀렸습니다.');
+          setLoading(false);
+          return;
+        }
+        const { error } = await supabase!.auth.signUp({ 
+          email, 
+          password,
+          options: {
+            data: { role: signupRole }
+          }
+        });
+        if (error) throw error;
+        alert('회원가입 성공! 로그인해주세요.');
+        setIsLogin(true);
+      }
+    } catch (error: any) {
+      alert(error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
-    <div id="login-screen">
-      <div className="login-box">
-        <h1 style={{ color: 'var(--accent-primary)', marginBottom: '10px' }}>D&D 5e Session Hub</h1>
-        <p style={{ color: 'var(--text-muted)', marginBottom: '30px', fontSize: '0.95em' }}>모험을 시작하려면 로그인하세요.</p>
+    <div className="auth-container">
+      <div className="auth-box">
+        <h1 style={{ color: 'var(--accent-primary)', marginBottom: '10px' }}><Swords size={32} style={{ verticalAlign: 'middle' }}/> D&D 5e Hub</h1>
+        <p style={{ color: 'var(--text-muted)', marginBottom: '20px' }}>모험을 시작하려면 계정이 필요합니다.</p>
         
-        <input 
-          type="password" 
-          placeholder="마스터 비밀번호 (Player는 생략)" 
-          value={password} 
-          onChange={e => setPassword(e.target.value)}
-          onKeyDown={e => e.key === 'Enter' && onLogin(password === '1234' ? 'dm' : 'player')}
-        />
+        <div className="auth-tabs">
+          <div className={`auth-tab ${isLogin ? 'active' : ''}`} onClick={() => setIsLogin(true)}>로그인</div>
+          <div className={`auth-tab ${!isLogin ? 'active' : ''}`} onClick={() => setIsLogin(false)}>회원가입</div>
+        </div>
+
+        {!isLogin && (
+          <div style={{ marginBottom: '15px', display: 'flex', gap: '20px', justifyContent: 'center' }}>
+            <label style={{ color: 'var(--text-main)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px' }}>
+              <input type="radio" name="role" checked={signupRole === 'player'} onChange={() => setSignupRole('player')} /> 플레이어
+            </label>
+            <label style={{ color: 'var(--text-main)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px' }}>
+              <input type="radio" name="role" checked={signupRole === 'dm'} onChange={() => setSignupRole('dm')} /> 마스터(DM)
+            </label>
+          </div>
+        )}
+
+        <input type="email" placeholder="이메일" value={email} onChange={e => setEmail(e.target.value)} />
+        <input type="password" placeholder="비밀번호" value={password} onChange={e => setPassword(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleAuth()} />
         
-        <button onClick={() => onLogin('dm')}>마스터(DM) 입장</button>
-        <button className="btn-secondary" onClick={() => onLogin('player')}>플레이어 입장</button>
+        {!isLogin && signupRole === 'dm' && (
+          <input type="password" placeholder="마스터 생성 암호" value={dmCode} onChange={e => setDmCode(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleAuth()} />
+        )}
+
+        <button onClick={handleAuth} disabled={loading}>
+          {loading ? '처리 중...' : isLogin ? '입장하기' : '계정 생성'}
+        </button>
       </div>
     </div>
   );
 }
 
-function DMDashboard({ cards, addCard, updateCard, updateStat, deleteCard, gimmicks, setGimmicks, openModal }: any) {
-  const formatText = (command: string, value: string | null = null) => {
-    document.execCommand(command, false, value || undefined);
+// --- Session Lobby ---
+function SessionLobby({ user, onSelect }: any) {
+  const [sessions, setSessions] = useState<SessionData[]>([]);
+  const [newName, setNewName] = useState('');
+  const isDM = user?.user_metadata?.role === 'dm';
+
+  const fetchSessions = async () => {
+    const { data } = await supabase!.from('sessions').select('*').order('created_at', { ascending: false });
+    if (data) setSessions(data);
+  };
+
+  useEffect(() => { fetchSessions(); }, []);
+
+  const handleCreate = async () => {
+    if (!newName) return;
+    const { data, error } = await supabase!.from('sessions').insert([{ name: newName, dm_id: user.id }]).select();
+    if (!error && data) {
+      setNewName('');
+      fetchSessions();
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (confirm('정말 삭제하시겠습니까? 관련 데이터가 모두 지워집니다.')) {
+      await supabase!.from('sessions').delete().eq('id', id);
+      fetchSessions();
+    }
   };
 
   return (
     <div className="dashboard">
-      {/* Gimmicks & Conditions Panel */}
-      <div className="gimmick-panel">
-        <h2>⚠️ 세션 기믹 및 상태이상 (마스터 전용 편집)</h2>
-        <p style={{ fontSize: '0.85em', color: 'var(--text-muted)', marginBottom: '10px' }}>이곳에 작성된 내용은 플레이어 화면 상단에 실시간으로 공유됩니다.</p>
-        <div className="toolbar">
-          <button onMouseDown={e => e.preventDefault()} onClick={() => formatText('bold')}><b>B</b></button>
-          <button onMouseDown={e => e.preventDefault()} onClick={() => formatText('italic')}><i>I</i></button>
-          <button onMouseDown={e => e.preventDefault()} onClick={() => formatText('underline')}><u>U</u></button>
-          <span style={{ borderLeft: '1px solid var(--border-color)', margin: '0 5px' }}></span>
-          <button onMouseDown={e => e.preventDefault()} onClick={() => formatText('foreColor', '#ef4444')} style={{ color: 'var(--accent-danger)', fontWeight: 'bold' }}>Red</button>
-          <button onMouseDown={e => e.preventDefault()} onClick={() => formatText('foreColor', '#3b82f6')} style={{ color: 'var(--accent-primary)', fontWeight: 'bold' }}>Blue</button>
-          <button onMouseDown={e => e.preventDefault()} onClick={() => formatText('foreColor', '#10b981')} style={{ color: 'var(--accent-success)', fontWeight: 'bold' }}>Green</button>
+      <div className="header">
+        <h2 style={{ margin: 0, color: 'var(--text-main)' }}>세션 선택</h2>
+      </div>
+      
+      {isDM && (
+        <div className="card" style={{ marginBottom: '30px', display: 'flex', gap: '10px', alignItems: 'center' }}>
+          <input 
+            type="text" 
+            placeholder="새 세션 이름 (예: 2026-04-04 첫 모험)" 
+            value={newName} 
+            onChange={e => setNewName(e.target.value)} 
+            style={{ flex: 1, padding: '12px', borderRadius: '8px', border: '1px solid var(--border-color)', background: 'rgba(0,0,0,0.2)', color: 'var(--text-main)' }}
+            onKeyDown={e => e.key === 'Enter' && handleCreate()}
+          />
+          <button className="btn btn-add" onClick={handleCreate}><Plus size={16} style={{ verticalAlign: 'middle' }}/> 새 세션 생성</button>
         </div>
-        <div 
-          className="editor" 
-          contentEditable 
-          suppressContentEditableWarning
-          onBlur={e => setGimmicks(e.currentTarget.innerHTML)}
-          dangerouslySetInnerHTML={{ __html: gimmicks }}
-          style={{ minHeight: '100px' }}
-        />
+      )}
+
+      <div className="card-container">
+        {sessions.map(s => (
+          <div key={s.id} className="card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '20px' }}>
+            <div>
+              <h3 style={{ margin: 0, cursor: 'pointer', color: 'var(--accent-primary)', fontSize: '1.2em' }} onClick={() => onSelect(s)}>{s.name}</h3>
+              <span style={{ fontSize: '0.8em', color: 'var(--text-muted)' }}>{s.dm_id === user.id ? '👑 내가 마스터인 세션' : '👤 플레이어로 참여'}</span>
+            </div>
+            <div>
+              <button className="btn btn-action" onClick={() => onSelect(s)}>입장</button>
+              {s.dm_id === user.id && <button className="btn btn-danger" style={{ marginLeft: '10px' }} onClick={() => handleDelete(s.id)}><Trash2 size={16}/></button>}
+            </div>
+          </div>
+        ))}
+        {sessions.length === 0 && <p style={{ color: 'var(--text-muted)' }}>생성된 세션이 없습니다.</p>}
+      </div>
+    </div>
+  );
+}
+
+// --- DM Dashboard ---
+function DMDashboard({ session, onBack, openModal }: any) {
+  const [cards, setCards] = useState<CardData[]>([]);
+
+  const fetchCards = async () => {
+    const { data } = await supabase!.from('cards').select('*').eq('session_id', session.id).order('created_at', { ascending: false });
+    if (data) setCards(data);
+  };
+
+  useEffect(() => {
+    fetchCards();
+    const channel = supabase!.channel('cards_changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'cards', filter: `session_id=eq.${session.id}` }, fetchCards)
+      .subscribe();
+    return () => { supabase!.removeChannel(channel); };
+  }, [session.id]);
+
+  const addCard = async (type: CardType) => {
+    const newCard = {
+      session_id: session.id, type,
+      title: type === 'statblock' ? '새 몬스터' : type === 'image' ? '새 이미지' : '새 텍스트',
+      content: type === 'statblock' ? '<b>방어도</b> 10<br><b>HP</b> 10 (2d8)<br><b>이동 속도</b> 30ft<hr><b>행동</b><br>공격: +2 명중, 1d6 피해.' : '',
+      is_revealed: false,
+      stats: { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 }
+    };
+    await supabase!.from('cards').insert([newCard]);
+  };
+
+  const updateCard = async (id: string, updates: Partial<CardData>) => {
+    await supabase!.from('cards').update(updates).eq('id', id);
+  };
+
+  const deleteCard = async (id: string) => {
+    if (confirm('정말 삭제하시겠습니까?')) {
+      await supabase!.from('cards').delete().eq('id', id);
+    }
+  };
+
+  return (
+    <div className="dashboard">
+      <div className="header">
+        <h2 style={{ margin: 0, color: 'var(--text-main)' }}>현재 세션: <span style={{ color: 'var(--accent-primary)' }}>{session.name}</span> <span style={{fontSize:'0.6em', color:'var(--text-muted)'}}>(마스터)</span></h2>
+        <button className="btn" style={{ background: '#4b5563' }} onClick={onBack}>← 세션 목록으로</button>
       </div>
 
+      <InitiativeTracker sessionId={session.id} isDM={true} />
+
       <div className="toolbar" style={{ marginBottom: '20px', justifyContent: 'center', background: 'transparent', border: 'none' }}>
-        <button className="btn btn-add" onClick={() => addCard('statblock')}>+ 몬스터/NPC 추가</button>
-        <button className="btn btn-add" onClick={() => addCard('image')}>+ 지도/이미지 추가</button>
-        <button className="btn btn-add" onClick={() => addCard('text')}>+ 텍스트 노트 추가</button>
+        <button className="btn btn-add" onClick={() => addCard('statblock')}><User size={16} style={{verticalAlign:'middle'}}/> 몬스터/NPC 추가</button>
+        <button className="btn btn-add" onClick={() => addCard('image')}><ImageIcon size={16} style={{verticalAlign:'middle'}}/> 지도/이미지 추가</button>
+        <button className="btn btn-add" onClick={() => addCard('text')}><FileText size={16} style={{verticalAlign:'middle'}}/> 텍스트 노트 추가</button>
       </div>
 
       <div className="card-container">
         {cards.map((card: CardData) => (
-          <DMCard 
-            key={card.id} 
-            card={card} 
-            updateCard={updateCard} 
-            updateStat={updateStat} 
-            deleteCard={deleteCard} 
-            openModal={openModal}
-          />
+          <DMCard key={card.id} card={card} updateCard={updateCard} deleteCard={deleteCard} openModal={openModal} />
         ))}
         {cards.length === 0 && <p style={{ textAlign: 'center', width: '100%', color: 'var(--text-muted)' }}>추가된 카드가 없습니다.</p>}
       </div>
@@ -224,92 +369,35 @@ function DMDashboard({ cards, addCard, updateCard, updateStat, deleteCard, gimmi
   );
 }
 
-function DMCard({ card, updateCard, updateStat, deleteCard, openModal }: any) {
+function DMCard({ card, updateCard, deleteCard, openModal }: any) {
   const [isExpanded, setIsExpanded] = useState(false);
-  const [activeTooltip, setActiveTooltip] = useState<string | null>(null);
   const editorRef = useRef<HTMLDivElement>(null);
-  const savedRange = useRef<Range | null>(null);
-
-  const saveSelection = () => {
-    const sel = window.getSelection();
-    if (sel && sel.rangeCount > 0) {
-      savedRange.current = sel.getRangeAt(0);
-    }
-  };
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       const reader = new FileReader();
-      reader.onload = (ev) => {
-        updateCard(card.id, { imgSrc: ev.target?.result as string });
-      };
+      reader.onload = (ev) => updateCard(card.id, { img_src: ev.target?.result as string });
       reader.readAsDataURL(file);
     }
   };
 
-  const formatText = (command: string, value: string | null = null) => {
-    if (savedRange.current) {
-      const sel = window.getSelection();
-      sel?.removeAllRanges();
-      sel?.addRange(savedRange.current);
-    }
-    document.execCommand(command, false, value || undefined);
-    if (editorRef.current) {
-      updateCard(card.id, { content: editorRef.current.innerHTML });
-    }
-  };
-
-  const handleAddTooltip = () => {
-    if (savedRange.current) {
-      const sel = window.getSelection();
-      sel?.removeAllRanges();
-      sel?.addRange(savedRange.current);
-    }
-    const selection = window.getSelection();
-    if (!selection || selection.toString().trim().length === 0) {
-      alert('설명을 추가할 텍스트를 먼저 드래그해서 선택해주세요.');
-      return;
-    }
-    const desc = prompt(`'${selection.toString()}'에 대한 설명을 입력하세요:`);
-    if (desc) {
-      const html = `<span class="keyword-tooltip" data-tooltip="${desc.replace(/"/g, '&quot;')}">${selection.toString()}</span>`;
-      document.execCommand('insertHTML', false, html);
-      if (editorRef.current) {
-        updateCard(card.id, { content: editorRef.current.innerHTML });
-      }
-    }
-  };
-
-  const handleContentClick = (e: React.MouseEvent) => {
-    const target = e.target as HTMLElement;
-    if (target.classList.contains('keyword-tooltip')) {
-      setActiveTooltip(target.getAttribute('data-tooltip'));
-    } else {
-      setActiveTooltip(null);
-    }
+  const updateStat = (stat: keyof Stats, val: number) => {
+    updateCard(card.id, { stats: { ...card.stats, [stat]: val } });
   };
 
   return (
-    <div className={`card ${card.isRevealed ? 'revealed' : ''}`}>
+    <div className={`card ${card.is_revealed ? 'revealed' : ''}`}>
       <div className="card-header" onClick={() => setIsExpanded(!isExpanded)} style={{ cursor: 'pointer' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', width: '60%' }} onClick={e => e.stopPropagation()}>
-          <span style={{ cursor: 'pointer', color: 'var(--accent-primary)' }}>
-            {isExpanded ? '▼' : '▶'}
-          </span>
-          <input 
-            type="text" 
-            className="card-title" 
-            value={card.title} 
-            onChange={e => updateCard(card.id, { title: e.target.value })} 
-            style={{ width: '100%' }} 
-          />
+          <span style={{ color: 'var(--accent-primary)' }}>{isExpanded ? '▼' : '▶'}</span>
+          <input type="text" className="card-title" value={card.title} onChange={e => updateCard(card.id, { title: e.target.value })} style={{ width: '100%' }} />
         </div>
         <div onClick={e => e.stopPropagation()}>
-          <button className={`btn btn-reveal ${card.isRevealed ? 'active' : ''}`} onClick={() => updateCard(card.id, { isRevealed: !card.isRevealed })}>
-            {card.isRevealed ? '👁️ 공개됨' : '🙈 숨김'}
+          <button className={`btn btn-reveal ${card.is_revealed ? 'active' : ''}`} onClick={() => updateCard(card.id, { is_revealed: !card.is_revealed })}>
+            {card.is_revealed ? <><Eye size={16} style={{verticalAlign:'middle'}}/> 공개됨</> : <><EyeOff size={16} style={{verticalAlign:'middle'}}/> 숨김</>}
           </button>
-          <button className="btn btn-danger" style={{ padding: '8px', marginLeft: '5px' }} onClick={() => deleteCard(card.id)}>X</button>
+          <button className="btn btn-danger" style={{ padding: '8px', marginLeft: '5px' }} onClick={() => deleteCard(card.id)}><Trash2 size={16}/></button>
         </div>
       </div>
 
@@ -319,7 +407,7 @@ function DMCard({ card, updateCard, updateStat, deleteCard, openModal }: any) {
             <div style={{ marginBottom: '15px' }}>
               <span style={{ fontSize: '0.8em', color: 'var(--text-muted)' }}>이미지 첨부:</span>
               <input type="file" accept="image/*" onChange={handleImageUpload} style={{ marginLeft: '10px', color: 'var(--text-main)' }} />
-              {card.imgSrc && <img src={card.imgSrc} className="image-preview" onClick={() => openModal(card.imgSrc)} />}
+              {card.img_src && <img src={card.img_src} className="image-preview" onClick={() => openModal(card.img_src)} />}
             </div>
           )}
 
@@ -328,7 +416,7 @@ function DMCard({ card, updateCard, updateStat, deleteCard, openModal }: any) {
               {(['str', 'dex', 'con', 'int', 'wis', 'cha'] as const).map(stat => (
                 <div className="stat-box" key={stat}>
                   <span className="stat-name">{stat.toUpperCase()}</span>
-                  <input type="number" className="stat-input" value={card.stats[stat]} onChange={e => updateStat(card.id, stat, parseInt(e.target.value) || 0)} />
+                  <input type="number" className="stat-input" value={card.stats[stat]} onChange={e => updateStat(stat, parseInt(e.target.value) || 0)} />
                 </div>
               ))}
             </div>
@@ -337,108 +425,58 @@ function DMCard({ card, updateCard, updateStat, deleteCard, openModal }: any) {
           {(card.type === 'statblock' || card.type === 'text') && (
             <>
               <div className="toolbar">
-                <button onMouseDown={e => e.preventDefault()} onClick={() => formatText('bold')}><b>B</b></button>
-                <button onMouseDown={e => e.preventDefault()} onClick={() => formatText('italic')}><i>I</i></button>
-                <button onMouseDown={e => e.preventDefault()} onClick={() => formatText('underline')}><u>U</u></button>
-                <span style={{ borderLeft: '1px solid var(--border-color)', margin: '0 5px' }}></span>
-                <button onMouseDown={e => e.preventDefault()} onClick={() => formatText('foreColor', '#ef4444')} style={{ color: 'var(--accent-danger)', fontWeight: 'bold' }}>Red</button>
-                <button onMouseDown={e => e.preventDefault()} onClick={() => formatText('foreColor', '#3b82f6')} style={{ color: 'var(--accent-primary)', fontWeight: 'bold' }}>Blue</button>
-                <button onMouseDown={e => e.preventDefault()} onClick={() => formatText('foreColor', '#f3f4f6')} style={{ color: 'var(--text-main)', fontWeight: 'bold' }}>White</button>
-                <span style={{ borderLeft: '1px solid var(--border-color)', margin: '0 5px' }}></span>
-                <button onMouseDown={e => e.preventDefault()} onClick={handleAddTooltip} title="텍스트를 드래그하고 클릭하세요">📝 키워드 설명</button>
+                <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('bold')}><b>B</b></button>
+                <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('italic')}><i>I</i></button>
+                <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('underline')}><u>U</u></button>
+                <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('foreColor', false, '#ef4444')} style={{ color: 'var(--accent-danger)' }}>Red</button>
+                <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('foreColor', false, '#3b82f6')} style={{ color: 'var(--accent-primary)' }}>Blue</button>
               </div>
               <div 
-                ref={editorRef}
-                className="editor" 
-                contentEditable 
-                suppressContentEditableWarning
-                onMouseUp={saveSelection}
-                onKeyUp={saveSelection}
-                onBlur={e => {
-                  saveSelection();
-                  updateCard(card.id, { content: e.currentTarget.innerHTML });
-                }}
-                onClick={handleContentClick}
+                ref={editorRef} className="editor" contentEditable suppressContentEditableWarning
+                onBlur={e => updateCard(card.id, { content: e.currentTarget.innerHTML })}
                 dangerouslySetInnerHTML={{ __html: card.content }}
               />
             </>
           )}
         </div>
       )}
-
-      {activeTooltip && isExpanded && (
-        <div className="side-tooltip">
-          <strong style={{ color: 'var(--accent-primary)', display: 'block', marginBottom: '5px' }}>키워드 설명</strong>
-          <p style={{ margin: 0, fontSize: '0.9em', whiteSpace: 'pre-wrap', lineHeight: '1.4' }}>{activeTooltip}</p>
-          <button className="btn" style={{ marginTop: '10px', background: '#333', padding: '4px 8px', width: '100%' }} onClick={() => setActiveTooltip(null)}>닫기</button>
-        </div>
-      )}
     </div>
   );
 }
 
-function PlayerDashboard({ cards, playerSheet, setPlayerSheet, playerStats, setPlayerStats, gimmicks, openModal }: any) {
-  const [activeSheetTooltip, setActiveSheetTooltip] = useState<string | null>(null);
-  const sheetEditorRef = useRef<HTMLDivElement>(null);
-  const sheetSavedRange = useRef<Range | null>(null);
+// --- Player Dashboard ---
+function PlayerDashboard({ session, user, onBack, openModal }: any) {
+  const [cards, setCards] = useState<CardData[]>([]);
+  const [sheet, setSheet] = useState<PlayerSheet | null>(null);
 
-  const saveSheetSelection = () => {
-    const sel = window.getSelection();
-    if (sel && sel.rangeCount > 0) {
-      sheetSavedRange.current = sel.getRangeAt(0);
-    }
+  const fetchCards = async () => {
+    const { data } = await supabase!.from('cards').select('*').eq('session_id', session.id).order('created_at', { ascending: false });
+    if (data) setCards(data);
   };
 
-  const formatSheetText = (command: string, value: string | null = null) => {
-    if (sheetSavedRange.current) {
-      const sel = window.getSelection();
-      sel?.removeAllRanges();
-      sel?.addRange(sheetSavedRange.current);
+  const fetchSheet = async () => {
+    let { data } = await supabase!.from('player_sheets').select('*').eq('session_id', session.id).eq('user_id', user.id).single();
+    if (!data) {
+      const newSheet = { session_id: session.id, user_id: user.id, character_name: '새 캐릭터', content: '', stats: { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 } };
+      const res = await supabase!.from('player_sheets').insert([newSheet]).select().single();
+      data = res.data;
     }
-    document.execCommand(command, false, value || undefined);
-    if (sheetEditorRef.current) {
-      const html = sheetEditorRef.current.innerHTML;
-      setPlayerSheet(html);
-      localStorage.setItem('dnd_player_sheet_adv', html);
-    }
+    setSheet(data);
   };
 
-  const handleSheetAddTooltip = () => {
-    if (sheetSavedRange.current) {
-      const sel = window.getSelection();
-      sel?.removeAllRanges();
-      sel?.addRange(sheetSavedRange.current);
-    }
-    const selection = window.getSelection();
-    if (!selection || selection.toString().trim().length === 0) {
-      alert('설명을 추가할 텍스트를 먼저 드래그해서 선택해주세요.');
-      return;
-    }
-    const desc = prompt(`'${selection.toString()}'에 대한 설명을 입력하세요:`);
-    if (desc) {
-      const html = `<span class="keyword-tooltip" data-tooltip="${desc.replace(/"/g, '&quot;')}">${selection.toString()}</span>`;
-      document.execCommand('insertHTML', false, html);
-      if (sheetEditorRef.current) {
-        const newHtml = sheetEditorRef.current.innerHTML;
-        setPlayerSheet(newHtml);
-        localStorage.setItem('dnd_player_sheet_adv', newHtml);
-      }
-    }
-  };
+  useEffect(() => {
+    fetchCards();
+    fetchSheet();
+    const channel = supabase!.channel('player_sync')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'cards', filter: `session_id=eq.${session.id}` }, fetchCards)
+      .subscribe();
+    return () => { supabase!.removeChannel(channel); };
+  }, [session.id]);
 
-  const handleSheetContentClick = (e: React.MouseEvent) => {
-    const target = e.target as HTMLElement;
-    if (target.classList.contains('keyword-tooltip')) {
-      setActiveSheetTooltip(target.getAttribute('data-tooltip'));
-    } else {
-      setActiveSheetTooltip(null);
-    }
-  };
-
-  const updatePlayerStat = (stat: keyof Stats, val: number) => {
-    const newStats = { ...playerStats, [stat]: val };
-    setPlayerStats(newStats);
-    localStorage.setItem('dnd_player_stats_adv', JSON.stringify(newStats));
+  const updateSheet = async (updates: Partial<PlayerSheet>) => {
+    if (!sheet) return;
+    setSheet({ ...sheet, ...updates });
+    await supabase!.from('player_sheets').update(updates).eq('id', sheet.id);
   };
 
   const getModifier = (score: number) => {
@@ -448,144 +486,231 @@ function PlayerDashboard({ cards, playerSheet, setPlayerSheet, playerStats, setP
 
   return (
     <div className="dashboard">
-      {/* Gimmicks & Conditions Panel (Read-Only for Players) */}
-      <div className="gimmick-panel" style={{ borderColor: 'var(--border-color)' }}>
-        <h2 style={{ color: 'var(--accent-danger)' }}>⚠️ 현재 세션 기믹 및 상태이상</h2>
-        <div className="editor-content" dangerouslySetInnerHTML={{ __html: gimmicks }} style={{ minHeight: 'auto', background: 'rgba(0,0,0,0.2)', border: 'none' }} />
+      <div className="header">
+        <h2 style={{ margin: 0, color: 'var(--text-main)' }}>현재 세션: <span style={{ color: 'var(--accent-primary)' }}>{session.name}</span> <span style={{fontSize:'0.6em', color:'var(--text-muted)'}}>(플레이어)</span></h2>
+        <button className="btn" style={{ background: '#4b5563' }} onClick={onBack}>← 세션 목록으로</button>
       </div>
 
+      <InitiativeTracker sessionId={session.id} isDM={false} />
+
       <div style={{ display: 'flex', gap: '30px', alignItems: 'flex-start', flexWrap: 'wrap' }}>
-        {/* Left: Shared Cards */}
         <div className="card-container" style={{ flex: '1 1 500px', display: 'flex', flexDirection: 'column' }}>
           <h3 style={{ width: '100%', color: 'var(--accent-primary)', borderBottom: '1px solid var(--border-color)', paddingBottom: '10px', marginBottom: '20px' }}>공유된 정보</h3>
           {cards.map((card: CardData) => (
-            <PlayerCard key={card.id} card={card} openModal={openModal} />
-          ))}
-          {cards.length === 0 && <p style={{ color: 'var(--text-muted)' }}>마스터가 공유한 정보가 없습니다.</p>}
-        </div>
-
-        {/* Right: Personal Character Sheet */}
-        <div className="card" style={{ flex: '1 1 400px', position: 'sticky', top: '20px' }}>
-          <h3 style={{ color: 'var(--accent-primary)', marginBottom: '20px' }}>내 캐릭터 시트</h3>
-          
-          {/* Player Stats Grid */}
-          <div className="stats-grid" style={{ marginBottom: '20px' }}>
-            {(['str', 'dex', 'con', 'int', 'wis', 'cha'] as const).map(stat => (
-              <div className="stat-box" key={stat}>
-                <span className="stat-name">{stat.toUpperCase()}</span>
-                <input 
-                  type="number" 
-                  className="stat-input" 
-                  value={playerStats[stat]} 
-                  onChange={e => updatePlayerStat(stat, parseInt(e.target.value) || 0)}
-                />
-                <span className="stat-val" style={{ fontSize: '0.9em', color: 'var(--text-muted)' }}>({getModifier(playerStats[stat])})</span>
+            <div key={card.id} className={`card player-card ${card.is_revealed ? '' : 'blurred'}`}>
+              <div className="secret-badge">DM SECRET<br/><span style={{ fontSize: '0.5em', color: 'var(--text-main)' }}>마스터가 비공개 중입니다</span></div>
+              <div className="card-header">
+                <div className="card-title">{card.is_revealed ? card.title : '??? (미확인 개체)'}</div>
               </div>
-            ))}
-          </div>
-
-          <div className="toolbar" style={{ marginBottom: '10px' }}>
-            <button onMouseDown={e => e.preventDefault()} onClick={() => formatSheetText('bold')}><b>B</b></button>
-            <button onMouseDown={e => e.preventDefault()} onClick={() => formatSheetText('italic')}><i>I</i></button>
-            <button onMouseDown={e => e.preventDefault()} onClick={() => formatSheetText('underline')}><u>U</u></button>
-            <span style={{ borderLeft: '1px solid var(--border-color)', margin: '0 5px' }}></span>
-            <button onMouseDown={e => e.preventDefault()} onClick={() => formatSheetText('foreColor', '#ef4444')} style={{ color: 'var(--accent-danger)', fontWeight: 'bold' }}>Red</button>
-            <button onMouseDown={e => e.preventDefault()} onClick={() => formatSheetText('foreColor', '#3b82f6')} style={{ color: 'var(--accent-primary)', fontWeight: 'bold' }}>Blue</button>
-            <button onMouseDown={e => e.preventDefault()} onClick={() => formatSheetText('foreColor', '#f3f4f6')} style={{ color: 'var(--text-main)', fontWeight: 'bold' }}>White</button>
-            <span style={{ borderLeft: '1px solid var(--border-color)', margin: '0 5px' }}></span>
-            <button onMouseDown={e => e.preventDefault()} onClick={handleSheetAddTooltip} title="텍스트를 드래그하고 클릭하세요">📝 키워드 설명</button>
-          </div>
-          <div 
-            ref={sheetEditorRef}
-            className="editor" 
-            contentEditable 
-            suppressContentEditableWarning
-            onMouseUp={saveSheetSelection}
-            onKeyUp={saveSheetSelection}
-            onBlur={e => {
-              saveSheetSelection();
-              const html = e.currentTarget.innerHTML;
-              setPlayerSheet(html);
-              localStorage.setItem('dnd_player_sheet_adv', html);
-            }}
-            onClick={handleSheetContentClick}
-            dangerouslySetInnerHTML={{ __html: playerSheet || '캐릭터의 아이템, 메모, 특성을 자유롭게 적어보세요...' }}
-            style={{ minHeight: '300px' }}
-          />
-
-          {activeSheetTooltip && (
-            <div className="side-tooltip" style={{ left: '-290px', top: '50px' }}>
-              <strong style={{ color: 'var(--accent-primary)', display: 'block', marginBottom: '5px' }}>키워드 설명</strong>
-              <p style={{ margin: 0, fontSize: '0.9em', whiteSpace: 'pre-wrap', lineHeight: '1.4' }}>{activeSheetTooltip}</p>
-              <button className="btn" style={{ marginTop: '10px', background: '#333', padding: '4px 8px', width: '100%' }} onClick={() => setActiveSheetTooltip(null)}>닫기</button>
+              <div className="card-body">
+                {card.img_src && <img src={card.img_src} className="image-preview" onClick={() => openModal(card.img_src)} />}
+                {card.type === 'statblock' && (
+                  <div className="stats-grid">
+                    {(['str', 'dex', 'con', 'int', 'wis', 'cha'] as const).map(stat => (
+                      <div className="stat-box" key={stat}>
+                        <span className="stat-name">{stat.toUpperCase()}</span>
+                        <span className="stat-val">{card.stats[stat]} ({getModifier(card.stats[stat])})</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div className="editor-content" dangerouslySetInnerHTML={{ __html: card.content }} />
+              </div>
             </div>
-          )}
+          ))}
         </div>
+
+        {sheet && (
+          <div className="card" style={{ flex: '1 1 400px', position: 'sticky', top: '20px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '20px' }}>
+              <User color="var(--accent-primary)" />
+              <input type="text" value={sheet.character_name} onChange={e => updateSheet({ character_name: e.target.value })} style={{ background: 'transparent', border: 'none', color: 'var(--accent-primary)', fontSize: '1.3em', fontWeight: 'bold', outline: 'none', width: '100%' }} />
+            </div>
+            
+            <div className="stats-grid" style={{ marginBottom: '20px' }}>
+              {(['str', 'dex', 'con', 'int', 'wis', 'cha'] as const).map(stat => (
+                <div className="stat-box" key={stat}>
+                  <span className="stat-name">{stat.toUpperCase()}</span>
+                  <input type="number" className="stat-input" value={sheet.stats[stat]} onChange={e => updateSheet({ stats: { ...sheet.stats, [stat]: parseInt(e.target.value) || 0 } })} />
+                  <span className="stat-val" style={{ fontSize: '0.9em', color: 'var(--text-muted)' }}>({getModifier(sheet.stats[stat])})</span>
+                </div>
+              ))}
+            </div>
+
+            <div className="toolbar" style={{ marginBottom: '10px' }}>
+              <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('bold')}><b>B</b></button>
+              <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('italic')}><i>I</i></button>
+              <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('underline')}><u>U</u></button>
+            </div>
+            <div 
+              className="editor" contentEditable suppressContentEditableWarning
+              onBlur={e => updateSheet({ content: e.currentTarget.innerHTML })}
+              dangerouslySetInnerHTML={{ __html: sheet.content }}
+              style={{ minHeight: '300px' }}
+            />
+          </div>
+        )}
       </div>
     </div>
   );
 }
 
-function PlayerCard({ card, openModal }: { card: CardData, openModal: (src: string) => void }) {
-  const [isExpanded, setIsExpanded] = useState(false);
-  const [activeTooltip, setActiveTooltip] = useState<string | null>(null);
+// --- Initiative Tracker ---
+function InitiativeTracker({ sessionId, isDM }: { sessionId: string, isDM: boolean }) {
+  const [initiatives, setInitiatives] = useState<Initiative[]>([]);
+  const [newName, setNewName] = useState('');
+  const [newScore, setNewScore] = useState('');
 
-  const getModifier = (score: number) => {
-    let mod = Math.floor((score - 10) / 2);
-    return mod >= 0 ? `+${mod}` : mod;
+  const fetchInit = async () => {
+    const { data } = await supabase!.from('initiatives').select('*').eq('session_id', sessionId).order('score', { ascending: false });
+    if (data) setInitiatives(data);
   };
 
-  const handleContentClick = (e: React.MouseEvent) => {
-    const target = e.target as HTMLElement;
-    if (target.classList.contains('keyword-tooltip')) {
-      setActiveTooltip(target.getAttribute('data-tooltip'));
-    } else {
-      setActiveTooltip(null);
+  useEffect(() => {
+    fetchInit();
+    const channel = supabase!.channel('init_sync')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'initiatives', filter: `session_id=eq.${sessionId}` }, fetchInit)
+      .subscribe();
+    return () => { supabase!.removeChannel(channel); };
+  }, [sessionId]);
+
+  const handleAdd = async () => {
+    if (!newName || !newScore) return;
+    await supabase!.from('initiatives').insert([{ session_id: sessionId, name: newName, score: parseInt(newScore) }]);
+    setNewName(''); setNewScore('');
+  };
+
+  const handleDelete = async (id: string) => {
+    await supabase!.from('initiatives').delete().eq('id', id);
+  };
+
+  const handleNextTurn = async () => {
+    if (initiatives.length === 0) return;
+    const activeIdx = initiatives.findIndex(i => i.is_active);
+    const nextIdx = activeIdx === -1 || activeIdx === initiatives.length - 1 ? 0 : activeIdx + 1;
+    
+    // Reset all, then set next
+    await supabase!.from('initiatives').update({ is_active: false }).eq('session_id', sessionId);
+    await supabase!.from('initiatives').update({ is_active: true }).eq('id', initiatives[nextIdx].id);
+  };
+
+  const handleClear = async () => {
+    if (confirm('전투를 종료하고 모든 우선권을 삭제하시겠습니까?')) {
+      await supabase!.from('initiatives').delete().eq('session_id', sessionId);
     }
   };
 
   return (
-    <div className={`card player-card ${card.isRevealed ? '' : 'blurred'}`}>
-      <div className="secret-badge">DM SECRET<br/><span style={{ fontSize: '0.5em', color: 'var(--text-main)' }}>마스터가 비공개 중입니다</span></div>
-      <div className="card-header" onClick={() => setIsExpanded(!isExpanded)} style={{ cursor: 'pointer' }}>
-        <div className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <span style={{ color: 'var(--accent-primary)' }}>{isExpanded ? '▼' : '▶'}</span>
-          {card.isRevealed ? card.title : '??? (미확인 개체)'}
-        </div>
+    <div className="initiative-tracker">
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+        <h3 style={{ margin: 0, color: 'var(--accent-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}><Swords size={20}/> 전투 우선권 (Initiative)</h3>
+        {isDM && (
+          <div>
+            <button className="btn btn-action" onClick={handleNextTurn} style={{ marginRight: '10px' }}>다음 턴 ⏭️</button>
+            <button className="btn btn-danger" onClick={handleClear}>전투 종료</button>
+          </div>
+        )}
       </div>
 
-      {isExpanded && (
-        <div className="card-body">
-          {card.imgSrc && (
-            <img src={card.imgSrc} className="image-preview" onClick={() => openModal(card.imgSrc)} title="클릭하여 확대" />
-          )}
-
-          {card.type === 'statblock' && (
-            <>
-              <div className="stats-grid">
-                {(['str', 'dex', 'con', 'int', 'wis', 'cha'] as const).map(stat => (
-                  <div className="stat-box" key={stat}>
-                    <span className="stat-name">{stat.toUpperCase()}</span>
-                    <span className="stat-val">{card.stats[stat]} ({getModifier(card.stats[stat])})</span>
-                  </div>
-                ))}
-              </div>
-              <div className="editor-content" onClick={handleContentClick} dangerouslySetInnerHTML={{ __html: card.content }} />
-            </>
-          )}
-          {card.type === 'text' && (
-            <div className="editor-content" onClick={handleContentClick} dangerouslySetInnerHTML={{ __html: card.content }} />
-          )}
+      {isDM && (
+        <div style={{ display: 'flex', gap: '10px', marginTop: '15px' }}>
+          <input type="text" placeholder="이름 (캐릭터/몬스터)" value={newName} onChange={e => setNewName(e.target.value)} style={{ flex: 1, padding: '10px', borderRadius: '6px', border: '1px solid var(--border-color)', background: 'var(--bg-main)', color: 'white' }} />
+          <input type="number" placeholder="우선권 수치" value={newScore} onChange={e => setNewScore(e.target.value)} style={{ width: '100px', padding: '10px', borderRadius: '6px', border: '1px solid var(--border-color)', background: 'var(--bg-main)', color: 'white' }} onKeyDown={e => e.key === 'Enter' && handleAdd()} />
+          <button className="btn btn-add" onClick={handleAdd}>추가</button>
         </div>
       )}
 
-      {activeTooltip && isExpanded && (
-        <div className="side-tooltip">
-          <strong style={{ color: 'var(--accent-primary)', display: 'block', marginBottom: '5px' }}>키워드 설명</strong>
-          <p style={{ margin: 0, fontSize: '0.9em', whiteSpace: 'pre-wrap', lineHeight: '1.4' }}>{activeTooltip}</p>
-          <button className="btn" style={{ marginTop: '10px', background: '#333', padding: '4px 8px', width: '100%' }} onClick={() => setActiveTooltip(null)}>닫기</button>
-        </div>
-      )}
+      <div className="init-list">
+        {initiatives.map(init => (
+          <div key={init.id} className={`init-item ${init.is_active ? 'active' : ''}`}>
+            <div className="init-score">{init.score}</div>
+            <div className="init-name">{init.name} {init.is_active && <span style={{ fontSize: '0.8em', color: 'var(--accent-success)', marginLeft: '10px' }}>◀ 현재 턴</span>}</div>
+            {isDM && <button className="btn btn-danger" style={{ padding: '6px 10px' }} onClick={() => handleDelete(init.id)}><Trash2 size={14}/></button>}
+          </div>
+        ))}
+        {initiatives.length === 0 && <p style={{ color: 'var(--text-muted)', fontSize: '0.9em', textAlign: 'center', marginTop: '10px' }}>현재 진행 중인 전투가 없습니다.</p>}
+      </div>
     </div>
+  );
+}
+
+// --- Wiki Panel ---
+function WikiPanel({ isOpen, onClose, isDM }: any) {
+  const [content, setContent] = useState('');
+
+  const fetchWiki = async () => {
+    const { data } = await supabase!.from('wikis').select('*').limit(1).single();
+    if (data) setContent(data.content);
+  };
+
+  useEffect(() => {
+    if (isOpen) fetchWiki();
+  }, [isOpen]);
+
+  const handleSave = async () => {
+    const { data } = await supabase!.from('wikis').select('id').limit(1).single();
+    if (data) {
+      await supabase!.from('wikis').update({ content }).eq('id', data.id);
+      alert('저장되었습니다.');
+    }
+  };
+
+  return (
+    <>
+      {isOpen && <div className="modal-overlay" onClick={onClose} />}
+      <div className={`wiki-panel ${isOpen ? 'open' : ''}`}>
+        <div className="wiki-header">
+          <h2 style={{ margin: 0, color: 'var(--accent-primary)', fontSize: '1.3em' }}>📖 캠페인 위키</h2>
+          <button className="btn" style={{ background: '#333' }} onClick={onClose}>닫기</button>
+        </div>
+        <div className="wiki-body">
+          {isDM && (
+            <div className="toolbar" style={{ marginBottom: '15px' }}>
+              <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('bold')}><b>B</b></button>
+              <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('italic')}><i>I</i></button>
+              <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('underline')}><u>U</u></button>
+              <button className="btn btn-action" style={{ marginLeft: 'auto' }} onClick={handleSave}><Save size={14} style={{verticalAlign:'middle'}}/> 저장</button>
+            </div>
+          )}
+          <div 
+            className={isDM ? 'editor' : 'editor-content'} 
+            contentEditable={isDM} suppressContentEditableWarning
+            onBlur={e => setContent(e.currentTarget.innerHTML)}
+            dangerouslySetInnerHTML={{ __html: content }}
+            style={{ minHeight: '100%', border: isDM ? '' : 'none', padding: isDM ? '20px' : '0' }}
+          />
+        </div>
+      </div>
+    </>
+  );
+}
+
+// --- Dice Roller ---
+function DiceRoller() {
+  const [isOpen, setIsOpen] = useState(false);
+  const [result, setResult] = useState<string>('주사위를 굴리세요');
+
+  const roll = (sides: number) => {
+    const val = Math.floor(Math.random() * sides) + 1;
+    setResult(`d${sides} 🎲 ${val}`);
+  };
+
+  return (
+    <>
+      <button className="dice-roller-btn" onClick={() => setIsOpen(!isOpen)}><Dices size={28} /></button>
+      {isOpen && (
+        <div className="dice-panel">
+          <div className="dice-header">
+            주사위 굴리기 <button className="btn btn-danger" style={{ padding: '4px 8px' }} onClick={() => setIsOpen(false)}>X</button>
+          </div>
+          <div className="dice-body">
+            {[4, 6, 8, 10, 12, 20, 100].map(d => (
+              <button key={d} className="dice-btn" onClick={() => roll(d)}>d{d}</button>
+            ))}
+          </div>
+          <div className="dice-result-area">{result}</div>
+        </div>
+      )}
+    </>
   );
 }
