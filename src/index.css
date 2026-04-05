@@ -1,0 +1,166 @@
+@import "tailwindcss";
+
+:root {
+    --bg-main: #121212;
+    --card-bg: #1e1e1e;
+    --stat-bg: #2a2a2a;
+    --border-color: #333333;
+    --text-main: #f3f4f6;
+    --text-muted: #9ca3af;
+    --accent-primary: #3b82f6; /* Modern Blue */
+    --accent-danger: #ef4444;
+    --accent-success: #10b981;
+}
+
+body { 
+    font-family: 'Malgun Gothic', '맑은 고딕', sans-serif; 
+    background-color: var(--bg-main); 
+    color: var(--text-main); 
+    margin: 0; 
+    padding: 0; 
+    line-height: 1.6;
+    /* Subtle dark grid for tabletop feel */
+    background-image: linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px);
+    background-size: 40px 40px;
+}
+
+h1, h2, h3, .card-title, .secret-badge { 
+    font-family: 'Malgun Gothic', '맑은 고딕', sans-serif; 
+    color: var(--accent-primary); 
+    margin-top: 0;
+    letter-spacing: -0.5px;
+}
+
+/* 로그인 */
+#login-screen { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; background: radial-gradient(circle at center, #1e1e1e 0%, #121212 100%); }
+.login-box { border: 1px solid var(--border-color); padding: 50px 40px; background: rgba(30, 30, 30, 0.8); backdrop-filter: blur(10px); border-radius: 16px; box-shadow: 0 20px 40px rgba(0,0,0,0.5); text-align: center; max-width: 400px; width: 100%; }
+.login-box h1 { font-size: 1.8em; margin-bottom: 10px; color: var(--text-main); }
+.login-box input { margin-bottom: 15px; padding: 14px; width: 100%; box-sizing: border-box; border: 1px solid var(--border-color); background: rgba(0,0,0,0.2); color: var(--text-main); border-radius: 8px; font-size: 1em; transition: border-color 0.2s; }
+.login-box input:focus { outline: none; border-color: var(--accent-primary); }
+.login-box button { padding: 14px 24px; cursor: pointer; background: var(--accent-primary); color: #fff; border: none; font-weight: bold; font-family: 'Malgun Gothic', '맑은 고딕', sans-serif; font-size: 1.1em; border-radius: 8px; transition: all 0.2s; width: 100%; margin-top: 10px; }
+.login-box button:hover { background: #2563eb; transform: translateY(-2px); box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3); }
+.login-box .btn-secondary { background: #333; margin-top: 10px; }
+.login-box .btn-secondary:hover { background: #444; box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
+
+/* 대시보드 공통 */
+.dashboard { padding: 30px 20px; max-width: 1200px; margin: auto; }
+.header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-color); padding-bottom: 20px; margin-bottom: 30px; flex-wrap: wrap; gap: 15px;}
+
+/* 세션 관리자 바 */
+.session-bar { background: var(--card-bg); padding: 15px 20px; border-radius: 12px; display: flex; gap: 12px; align-items: center; margin-bottom: 30px; border: 1px solid var(--border-color); flex-wrap: wrap; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+.session-bar select, .session-bar input { padding: 10px; font-family: inherit; background: var(--bg-main); color: var(--text-main); border: 1px solid var(--border-color); border-radius: 6px; }
+.session-bar select:focus, .session-bar input:focus { outline: none; border-color: var(--accent-primary); }
+
+.btn { padding: 10px 16px; cursor: pointer; border: none; font-weight: 600; border-radius: 6px; color: #fff; transition: 0.2s; font-size: 0.95em; }
+.btn-add { background: var(--accent-primary); }
+.btn-action { background: #10b981; }
+.btn-danger { background: var(--accent-danger); }
+.btn-reveal { background: #4b5563; }
+.btn-reveal.active { background: var(--accent-success); }
+.btn:hover { filter: brightness(1.1); transform: translateY(-1px); }
+
+/* 카드 레이아웃 */
+.card-container { display: grid; grid-template-columns: 1fr; gap: 24px; }
+@media(min-width: 900px) { .card-container { grid-template-columns: 1fr 1fr; } }
+
+.card { background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 16px; padding: 24px; box-shadow: 0 10px 25px rgba(0,0,0,0.2); position: relative; transition: border-color 0.3s; }
+.card.revealed { border-color: var(--accent-success); box-shadow: 0 0 20px rgba(16, 185, 129, 0.1); }
+.card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 1px solid var(--border-color); padding-bottom: 15px; }
+.card-title { width: 60%; font-size: 1.3em; font-weight: bold; padding: 8px; border: 1px solid transparent; background: transparent; color: var(--accent-primary); font-family: 'Malgun Gothic', '맑은 고딕', sans-serif;}
+.card-title:focus { border: 1px solid var(--border-color); background: var(--bg-main); outline: none; border-radius: 6px; }
+
+/* 스탯블록 능력치 Grid */
+.stats-grid { display: flex; justify-content: space-between; background: var(--stat-bg); border-radius: 12px; padding: 15px; margin: 20px 0; text-align: center; border: 1px solid var(--border-color); }
+.stat-box { display: flex; flex-direction: column; align-items: center; }
+.stat-name { font-weight: bold; font-size: 0.8em; color: var(--text-muted); letter-spacing: 1px; }
+.stat-input { width: 55px; text-align: center; font-weight: bold; font-size: 1.1em; border: 1px solid var(--border-color); background: var(--bg-main); color: var(--text-main); margin-top: 5px; border-radius: 6px; padding: 6px; }
+.stat-input:focus { outline: none; border-color: var(--accent-primary); }
+.stat-val { font-weight: bold; font-size: 1.2em; margin-top: 5px; color: var(--text-main); }
+
+/* 텍스트 에디터 & 이미지 */
+.toolbar { background: var(--stat-bg); padding: 10px; display: flex; gap: 8px; margin-bottom: 12px; border-radius: 8px; flex-wrap: wrap; border: 1px solid var(--border-color); }
+.toolbar button, .toolbar select { background: var(--bg-main); color: var(--text-main); border: 1px solid var(--border-color); padding: 6px 10px; border-radius: 6px; cursor: pointer; font-size: 0.9em; transition: 0.2s; }
+.toolbar button:hover { background: #333; border-color: #555; }
+
+.editor, .editor-content { min-height: 150px; border: 1px solid var(--border-color); padding: 20px; background: var(--bg-main); color: var(--text-main); outline: none; border-radius: 8px; line-height: 1.7; font-size: 0.95em; }
+.editor:focus { border-color: var(--accent-primary); box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2); }
+
+.image-preview { max-width: 100%; max-height: 300px; border: 1px solid var(--border-color); display: block; margin: 20px auto; object-fit: contain; cursor: zoom-in; border-radius: 8px; }
+
+/* 플레이어 뷰 블러 처리 */
+.player-card.blurred { filter: blur(12px) grayscale(50%); pointer-events: none; user-select: none; transition: filter 0.5s ease; }
+.player-card { transition: filter 0.5s ease; }
+.secret-badge { position: absolute; top: 40%; left: 50%; transform: translate(-50%, -50%); font-size: 2em; color: var(--accent-danger); font-family: 'Malgun Gothic', '맑은 고딕', sans-serif; display: none; text-shadow: 0 4px 15px rgba(0,0,0,0.9); z-index: 10; font-weight: bold; width: 100%; text-align: center;}
+.blurred .secret-badge { display: block; }
+
+/* 이미지 확대 모달 */
+#image-modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.95); z-index: 1000; justify-content: center; align-items: center; cursor: zoom-out; }
+#modal-img { max-width: 90%; max-height: 90%; border: 2px solid var(--border-color); box-shadow: 0 0 40px rgba(0,0,0,0.5); border-radius: 12px; }
+#image-modal.show { display: flex; }
+
+/* 키워드 툴팁 (새 기능) */
+.keyword-tooltip {
+    border-bottom: 2px dotted var(--accent-primary);
+    color: var(--accent-primary);
+    cursor: pointer;
+    position: relative;
+    font-weight: 600;
+    transition: all 0.2s;
+}
+.keyword-tooltip:hover {
+    background-color: rgba(59, 130, 246, 0.1);
+}
+
+/* 사이드 툴팁 패널 */
+.side-tooltip {
+    position: absolute;
+    top: 20px;
+    left: calc(100% + 20px);
+    width: 280px;
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    padding: 20px;
+    border-radius: 12px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+    z-index: 100;
+    color: var(--text-main);
+}
+.side-tooltip::before {
+    content: '';
+    position: absolute;
+    top: 20px;
+    left: -12px;
+    border-width: 6px;
+    border-style: solid;
+    border-color: transparent var(--border-color) transparent transparent;
+}
+@media (max-width: 1100px) {
+    .side-tooltip {
+        left: 0;
+        top: calc(100% + 20px);
+        width: 100%;
+    }
+    .side-tooltip::before {
+        top: -12px;
+        left: 20px;
+        border-color: transparent transparent var(--border-color) transparent;
+    }
+}
+
+/* 기믹 및 상태이상 패널 */
+.gimmick-panel {
+    background: var(--card-bg);
+    border: 1px solid var(--accent-primary);
+    border-radius: 16px;
+    padding: 24px;
+    margin-bottom: 30px;
+    box-shadow: 0 0 20px rgba(59, 130, 246, 0.1);
+}
+.gimmick-panel h2 {
+    color: var(--accent-primary);
+    margin-bottom: 15px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
