@@ -347,6 +347,78 @@ function SessionLobby({ user, onSelect }: any) {
   );
 }
 
+function MemoSidebar({ cards, sheet }: { cards: CardData[], sheet?: PlayerSheet | null }) {
+  const [memos, setMemos] = useState<{keyword: string, memo: string}[]>([]);
+
+  useEffect(() => {
+    const extractedMemos: {keyword: string, memo: string}[] = [];
+    const parser = new DOMParser();
+
+    const extractFromHtml = (html: string) => {
+      if (!html) return;
+      const doc = parser.parseFromString(html, 'text/html');
+      const nodes = doc.querySelectorAll('.keyword-memo');
+      nodes.forEach(node => {
+        const keyword = node.textContent || '';
+        const memo = node.getAttribute('data-memo') || node.getAttribute('title') || '';
+        if (keyword && memo) {
+          extractedMemos.push({ keyword, memo });
+        }
+      });
+    };
+
+    cards.forEach(card => {
+      if (card.is_revealed || !sheet) { // DM sees all, Player sees revealed
+        extractFromHtml(card.content);
+      }
+    });
+
+    if (sheet) {
+      extractFromHtml(sheet.content);
+    }
+
+    const uniqueMemos = extractedMemos.filter((v, i, a) => a.findIndex(t => (t.keyword === v.keyword && t.memo === v.memo)) === i);
+    setMemos(uniqueMemos);
+  }, [cards, sheet]);
+
+  if (memos.length === 0) return null;
+
+  return (
+    <div className="memo-sidebar" style={{
+      width: '280px',
+      background: 'rgba(30, 41, 59, 0.8)',
+      backdropFilter: 'blur(10px)',
+      border: '1px solid var(--border-color)',
+      borderRadius: '8px',
+      padding: '20px',
+      height: 'calc(100vh - 120px)',
+      position: 'sticky',
+      top: '20px',
+      overflowY: 'auto',
+      display: 'flex',
+      flexDirection: 'column',
+      gap: '15px',
+      flexShrink: 0
+    }}>
+      <h3 style={{ margin: 0, color: 'var(--accent-primary)', borderBottom: '1px solid var(--border-color)', paddingBottom: '10px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <BookOpen size={18} />
+        키워드 메모
+      </h3>
+      {memos.map((m, idx) => (
+        <div key={idx} style={{
+          background: 'rgba(59, 130, 246, 0.1)',
+          borderLeft: '3px solid var(--accent-primary)',
+          padding: '12px',
+          borderRadius: '4px'
+        }}>
+          <div style={{ fontWeight: 'bold', color: 'var(--text-main)', marginBottom: '6px' }}>{m.keyword}</div>
+          <div style={{ fontSize: '0.9em', color: 'var(--text-muted)', lineHeight: '1.5' }}>{m.memo}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // --- DM Dashboard ---
 function DMDashboard({ session, user, onBack, openModal }: any) {
   const [cards, setCards] = useState<CardData[]>([]);
@@ -427,37 +499,10 @@ function DMDashboard({ session, user, onBack, openModal }: any) {
     await supabase!.from('sessions').update({ background_url: null }).eq('id', session.id);
   };
 
-  const handleMouseOver = (e: React.MouseEvent) => {
-    const target = e.target as HTMLElement;
-    if (target.classList.contains('keyword-memo')) {
-      let memo = target.getAttribute('data-memo');
-      if (!memo) {
-        memo = target.getAttribute('title');
-        if (memo) {
-          target.setAttribute('data-memo', memo);
-          target.removeAttribute('title');
-        }
-      }
-      const card = target.closest('.card');
-      if (memo && card) {
-        const cardRect = card.getBoundingClientRect();
-        const targetRect = target.getBoundingClientRect();
-        const x = Math.min(cardRect.right + 20, window.innerWidth - 270);
-        setHoveredMemo({ text: memo, x, y: targetRect.top });
-      }
-    }
-  };
-
-  const handleMouseOut = (e: React.MouseEvent) => {
-    const target = e.target as HTMLElement;
-    if (target.classList.contains('keyword-memo')) {
-      setHoveredMemo(null);
-    }
-  };
-
   return (
-    <div className="dashboard" onMouseOver={handleMouseOver} onMouseOut={handleMouseOut}>
-      <div className="header">
+    <div style={{ display: 'flex', gap: '20px', maxWidth: '1400px', margin: '0 auto', alignItems: 'flex-start', padding: '0 20px' }}>
+      <div className="dashboard" style={{ flex: 1, minWidth: 0, padding: '20px 0', margin: 0 }}>
+        <div className="header">
         <h2 style={{ margin: 0, color: 'var(--text-main)' }}>현재 세션: <span style={{ color: 'var(--accent-primary)' }}>{session.name}</span> <span style={{fontSize:'0.6em', color:'var(--text-muted)'}}>(마스터)</span></h2>
         <div style={{ display: 'flex', gap: '10px' }}>
           <input type="file" id="bg-upload" accept="image/*" style={{ display: 'none' }} onChange={handleBgUpload} />
@@ -512,6 +557,8 @@ function DMDashboard({ session, user, onBack, openModal }: any) {
           </div>
         </div>
       )}
+      </div>
+      <MemoSidebar cards={cards} />
     </div>
   );
 }
@@ -624,6 +671,7 @@ function DMCard({ card, updateCard, deleteCard, openModal }: any) {
                 <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('underline')}><u>U</u></button>
                 <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('foreColor', false, '#ef4444')} style={{ color: 'var(--accent-danger)' }}>Red</button>
                 <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('foreColor', false, '#3b82f6')} style={{ color: 'var(--accent-primary)' }}>Blue</button>
+                <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('foreColor', false, '#ffffff')} style={{ color: '#ffffff' }}>White</button>
                 <button onMouseDown={e => { e.preventDefault(); addKeywordMemo(); }} style={{ marginLeft: 'auto', background: 'var(--bg-secondary)', color: 'var(--text-main)' }}>📝 키워드 메모</button>
               </div>
               <div 
@@ -645,7 +693,6 @@ function PlayerDashboard({ session, user, onBack, openModal }: any) {
   const [sheet, setSheet] = useState<PlayerSheet | null>(null);
   const [showLoadModal, setShowLoadModal] = useState(false);
   const [savedSheets, setSavedSheets] = useState<any[]>([]);
-  const [hoveredMemo, setHoveredMemo] = useState<{text: string, x: number, y: number} | null>(null);
 
   // 한글 입력(IME) 끊김 방지를 위한 로컬 상태
   const [localCharName, setLocalCharName] = useState('');
@@ -720,37 +767,10 @@ function PlayerDashboard({ session, user, onBack, openModal }: any) {
     }
   };
 
-  const handleMouseOver = (e: React.MouseEvent) => {
-    const target = e.target as HTMLElement;
-    if (target.classList.contains('keyword-memo')) {
-      let memo = target.getAttribute('data-memo');
-      if (!memo) {
-        memo = target.getAttribute('title');
-        if (memo) {
-          target.setAttribute('data-memo', memo);
-          target.removeAttribute('title');
-        }
-      }
-      const card = target.closest('.card');
-      if (memo && card) {
-        const cardRect = card.getBoundingClientRect();
-        const targetRect = target.getBoundingClientRect();
-        const x = Math.min(cardRect.right + 20, window.innerWidth - 270);
-        setHoveredMemo({ text: memo, x, y: targetRect.top });
-      }
-    }
-  };
-
-  const handleMouseOut = (e: React.MouseEvent) => {
-    const target = e.target as HTMLElement;
-    if (target.classList.contains('keyword-memo')) {
-      setHoveredMemo(null);
-    }
-  };
-
   return (
-    <div className="dashboard" onMouseOver={handleMouseOver} onMouseOut={handleMouseOut}>
-      <div className="header">
+    <div style={{ display: 'flex', gap: '20px', maxWidth: '1400px', margin: '0 auto', alignItems: 'flex-start', padding: '0 20px' }}>
+      <div className="dashboard" style={{ flex: 1, minWidth: 0, padding: '20px 0', margin: 0 }}>
+        <div className="header">
         <h2 style={{ margin: 0, color: 'var(--text-main)' }}>현재 세션: <span style={{ color: 'var(--accent-primary)' }}>{session.name}</span> <span style={{fontSize:'0.6em', color:'var(--text-muted)'}}>(플레이어)</span></h2>
         <button className="btn" style={{ background: '#4b5563' }} onClick={onBack}>← 세션 목록으로</button>
       </div>
@@ -806,6 +826,9 @@ function PlayerDashboard({ session, user, onBack, openModal }: any) {
               <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('bold')}><b>B</b></button>
               <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('italic')}><i>I</i></button>
               <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('underline')}><u>U</u></button>
+              <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('foreColor', false, '#ef4444')} style={{ color: 'var(--accent-danger)' }}>Red</button>
+              <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('foreColor', false, '#3b82f6')} style={{ color: 'var(--accent-primary)' }}>Blue</button>
+              <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('foreColor', false, '#ffffff')} style={{ color: '#ffffff' }}>White</button>
               <button onMouseDown={e => { e.preventDefault(); addKeywordMemo(); }} style={{ marginLeft: 'auto', background: 'var(--bg-secondary)', color: 'var(--text-main)' }}>📝 키워드 메모</button>
             </div>
             <div 
@@ -845,6 +868,8 @@ function PlayerDashboard({ session, user, onBack, openModal }: any) {
           </div>
         </div>
       )}
+      </div>
+      <MemoSidebar cards={cards} sheet={sheet} />
     </div>
   );
 }
