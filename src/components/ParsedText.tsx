@@ -158,18 +158,23 @@ export function ParsedText({ text, stats }: { text: string, stats: any }) {
         if (isKeywordMemo || hasMemoAttr) {
           const keywordString = getTextContent(domNode);
           const keywordNode = domToReact(domNode.children, options);
-          const customDesc = attribs['data-memo'];
+          // data-memo 속성을 더 확실하게 가져오기 (소문자, 카멜케이스 모두 대응)
+          const customDesc = attribs['data-memo'] || attribs['datamemo'] || attribs['dataMemo'];
           
-          // If it has the class or the attribute, we treat it as a custom tooltip
-          return (
-            <KeywordTooltip 
-              key={domNode.attribs.id || Math.random().toString()}
-              keywordNode={keywordNode} 
-              keywordString={keywordString} 
-              customDesc={customDesc} 
-              stats={stats} 
-            />
-          );
+          // data-memo가 명시적으로 존재한다면 (빈 문자열 포함) 커스텀 툴팁으로 처리
+          const isCustom = 'data-memo' in attribs || 'datamemo' in attribs || 'dataMemo' in attribs;
+          
+          if (isCustom) {
+            return (
+              <KeywordTooltip 
+                key={domNode.attribs.id || Math.random().toString()}
+                keywordNode={keywordNode} 
+                keywordString={keywordString} 
+                customDesc={customDesc || ''} 
+                stats={stats} 
+              />
+            );
+          }
         }
       }
       if (domNode.type === 'text' && domNode.data) {

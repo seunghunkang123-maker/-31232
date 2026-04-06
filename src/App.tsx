@@ -498,12 +498,19 @@ function DMCard({ card, updateCard, deleteCard, openModal }: any) {
   const [editingMemo, setEditingMemo] = useState<{ id: string, html: string } | null>(null);
   const editorRef = useRef<HTMLDivElement>(null);
 
-  // 한글 입력(IME) 끊김 방지를 위한 로컬 상태
+  // 한글 입력(IME) 끊김 방지 및 DOM 동기화 문제를 위한 로컬 상태
   const [localTitle, setLocalTitle] = useState(card.title);
   const [localStats, setLocalStats] = useState(card.stats);
+  const [localContent, setLocalContent] = useState(card.content);
 
   useEffect(() => { setLocalTitle(card.title); }, [card.title]);
   useEffect(() => { setLocalStats(card.stats); }, [card.stats]);
+  useEffect(() => { 
+    // 에디터가 포커스 중이 아닐 때만 외부 변경사항 반영
+    if (document.activeElement !== editorRef.current) {
+      setLocalContent(card.content); 
+    }
+  }, [card.content]);
 
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -561,7 +568,11 @@ function DMCard({ card, updateCard, deleteCard, openModal }: any) {
         span.title = "툴팁 내용: " + html.replace(/<[^>]*>/g, '').substring(0, 50) + "... (미리보기 모드에서 확인 가능)";
         span.removeAttribute('id');
       }
-      if (editorRef.current) updateCard(card.id, { content: editorRef.current.innerHTML });
+      if (editorRef.current) {
+        const newContent = editorRef.current.innerHTML;
+        setLocalContent(newContent);
+        updateCard(card.id, { content: newContent });
+      }
     }
     setEditingMemo(null);
   };
@@ -648,10 +659,16 @@ function DMCard({ card, updateCard, deleteCard, openModal }: any) {
                   const tempId = 'memo-' + Date.now();
                   const html = `<span id="${tempId}" class="keyword-memo" data-memo="">${selection.toString()}</span>`;
                   document.execCommand('insertHTML', false, html);
-                  // Ensure the inserted element is correctly identified
-                  const inserted = document.getElementById(tempId);
-                  if (inserted) {
-                    setEditingMemo({ id: tempId, html: '' });
+                  
+                  if (editorRef.current) {
+                    const newContent = editorRef.current.innerHTML;
+                    setLocalContent(newContent);
+                    updateCard(card.id, { content: newContent });
+                    
+                    const inserted = document.getElementById(tempId);
+                    if (inserted) {
+                      setEditingMemo({ id: tempId, html: '' });
+                    }
                   }
                 }} style={{ background: 'var(--bg-secondary)', color: 'var(--text-main)' }}>📝 툴팁 추가</button>
                 <button onMouseDown={e => e.preventDefault()} onClick={() => setIsPreviewMode(!isPreviewMode)} style={{ marginLeft: 'auto', background: isPreviewMode ? 'var(--accent-primary)' : 'var(--bg-secondary)', color: '#fff' }}>
@@ -665,9 +682,13 @@ function DMCard({ card, updateCard, deleteCard, openModal }: any) {
               ) : (
                 <div 
                   ref={editorRef} className="editor" contentEditable suppressContentEditableWarning
-                  onBlur={e => updateCard(card.id, { content: e.currentTarget.innerHTML })}
+                  onBlur={e => {
+                    const newContent = e.currentTarget.innerHTML;
+                    setLocalContent(newContent);
+                    updateCard(card.id, { content: newContent });
+                  }}
                   onClick={handleEditorClick}
-                  dangerouslySetInnerHTML={{ __html: card.content }}
+                  dangerouslySetInnerHTML={{ __html: localContent }}
                 />
               )}
             </>
@@ -695,9 +716,10 @@ function PlayerDashboard({ session, user, onBack, openModal }: any) {
   const [isPreviewMode, setIsPreviewMode] = useState(false);
   const [editingMemo, setEditingMemo] = useState<{ id: string, html: string } | null>(null);
 
-  // 한글 입력(IME) 끊김 방지를 위한 로컬 상태
+  // 한글 입력(IME) 끊김 방지 및 DOM 동기화 문제를 위한 로컬 상태
   const [localCharName, setLocalCharName] = useState('');
   const [localStats, setLocalStats] = useState<Stats | null>(null);
+  const [localContent, setLocalContent] = useState('');
   const editorRef = useRef<HTMLDivElement>(null);
 
   const fetchCards = async () => {
@@ -737,6 +759,10 @@ function PlayerDashboard({ session, user, onBack, openModal }: any) {
     if (sheet) {
       setLocalCharName(sheet.character_name);
       setLocalStats(sheet.stats);
+      // 에디터가 포커스 중이 아닐 때만 외부 변경사항 반영
+      if (document.activeElement !== editorRef.current) {
+        setLocalContent(sheet.content);
+      }
     }
   }, [sheet]);
 
@@ -775,7 +801,11 @@ function PlayerDashboard({ session, user, onBack, openModal }: any) {
         span.title = "툴팁 내용: " + html.replace(/<[^>]*>/g, '').substring(0, 50) + "... (미리보기 모드에서 확인 가능)";
         span.removeAttribute('id');
       }
-      if (editorRef.current) updateSheet({ content: editorRef.current.innerHTML });
+      if (editorRef.current) {
+        const newContent = editorRef.current.innerHTML;
+        setLocalContent(newContent);
+        updateSheet({ content: newContent });
+      }
     }
     setEditingMemo(null);
   };
@@ -786,7 +816,11 @@ function PlayerDashboard({ session, user, onBack, openModal }: any) {
     if (span) {
       const textNode = document.createTextNode(span.textContent || '');
       span.parentNode?.replaceChild(textNode, span);
-      if (editorRef.current) updateSheet({ content: editorRef.current.innerHTML });
+      if (editorRef.current) {
+        const newContent = editorRef.current.innerHTML;
+        setLocalContent(newContent);
+        updateSheet({ content: newContent });
+      }
     }
     setEditingMemo(null);
   };
@@ -798,7 +832,11 @@ function PlayerDashboard({ session, user, onBack, openModal }: any) {
       if (!span.getAttribute('data-memo')) {
         const textNode = document.createTextNode(span.textContent || '');
         span.parentNode?.replaceChild(textNode, span);
-        if (editorRef.current) updateSheet({ content: editorRef.current.innerHTML });
+        if (editorRef.current) {
+          const newContent = editorRef.current.innerHTML;
+          setLocalContent(newContent);
+          updateSheet({ content: newContent });
+        }
       } else {
         span.removeAttribute('id');
       }
@@ -880,7 +918,17 @@ function PlayerDashboard({ session, user, onBack, openModal }: any) {
                 const tempId = 'memo-' + Date.now();
                 const html = `<span id="${tempId}" class="keyword-memo" data-memo="">${selection.toString()}</span>`;
                 document.execCommand('insertHTML', false, html);
-                setEditingMemo({ id: tempId, html: '' });
+                
+                if (editorRef.current) {
+                  const newContent = editorRef.current.innerHTML;
+                  setLocalContent(newContent);
+                  updateSheet({ content: newContent });
+                  
+                  const inserted = document.getElementById(tempId);
+                  if (inserted) {
+                    setEditingMemo({ id: tempId, html: '' });
+                  }
+                }
               }} style={{ background: 'var(--bg-secondary)', color: 'var(--text-main)' }}>📝 툴팁 추가</button>
               <button onMouseDown={e => e.preventDefault()} onClick={() => setIsPreviewMode(!isPreviewMode)} style={{ marginLeft: 'auto', background: isPreviewMode ? 'var(--accent-primary)' : 'var(--bg-secondary)', color: '#fff' }}>
                 {isPreviewMode ? '✏️ 편집 모드' : '👁️ 미리보기 (키워드 확인)'}
@@ -894,9 +942,13 @@ function PlayerDashboard({ session, user, onBack, openModal }: any) {
               <div 
                 ref={editorRef}
                 className="editor" contentEditable suppressContentEditableWarning
-                onBlur={e => updateSheet({ content: e.currentTarget.innerHTML })}
+                onBlur={e => {
+                  const newContent = e.currentTarget.innerHTML;
+                  setLocalContent(newContent);
+                  updateSheet({ content: newContent });
+                }}
                 onClick={handleEditorClick}
-                dangerouslySetInnerHTML={{ __html: sheet.content }}
+                dangerouslySetInnerHTML={{ __html: localContent }}
                 style={{ minHeight: '300px' }}
               />
             )}
