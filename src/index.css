@@ -125,16 +125,19 @@ h1, h2, h3, .card-title, .secret-badge {
 #image-modal.show { display: flex; }
 
 /* 키워드 툴팁 (새 기능) */
-.keyword-tooltip {
-    border-bottom: 2px dotted var(--accent-primary);
-    color: var(--accent-primary);
+.keyword-memo {
+    color: #fbbf24 !important; /* Tailwind amber-400 */
+    text-decoration: underline !important;
+    text-decoration-style: dashed !important;
+    text-underline-offset: 4px;
     cursor: pointer;
-    position: relative;
-    font-weight: 600;
-    transition: all 0.2s;
+    font-weight: bold;
+    background-color: transparent !important;
+    border-bottom: none !important;
 }
-.keyword-tooltip:hover {
-    background-color: rgba(59, 130, 246, 0.1);
+.keyword-memo:hover {
+    color: #f59e0b !important; /* Tailwind amber-500 */
+    background-color: rgba(251, 191, 36, 0.1) !important;
 }
 
 /* 사이드 툴팁 패널 */
