@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import parse, { HTMLReactParserOptions } from 'html-react-parser';
-import { useFloating, autoUpdate, offset, flip, shift, useHover, useFocus, useDismiss, useRole, useInteractions, useClick } from '@floating-ui/react';
+import parse, { HTMLReactParserOptions, domToReact } from 'html-react-parser';
+import { useFloating, autoUpdate, offset, flip, shift, useHover, useFocus, useDismiss, useRole, useInteractions, useClick, safePolygon } from '@floating-ui/react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { keywordDictionary } from '../lib/keywordDictionary';
 
@@ -38,7 +38,7 @@ function evaluateExpression(expr: string, stats: Record<string, any> = {}) {
   }
 }
 
-export const KeywordTooltip: React.FC<{ keyword: string, stats: any, customDesc?: string }> = ({ keyword, stats, customDesc }) => {
+export const KeywordTooltip: React.FC<{ keywordNode: React.ReactNode, keywordString: string, stats: any, customDesc?: string }> = ({ keywordNode, keywordString, stats, customDesc }) => {
   const [isOpen, setIsOpen] = useState(false);
   const { refs, floatingStyles, context } = useFloating({
     open: isOpen,
@@ -48,7 +48,12 @@ export const KeywordTooltip: React.FC<{ keyword: string, stats: any, customDesc?
     middleware: [offset(8), flip(), shift({ padding: 8 })],
   });
 
-  const hover = useHover(context, { move: false });
+  const hover = useHover(context, { 
+    handleClose: safePolygon({
+      buffer: 1,
+    }),
+    delay: { open: 100, close: 100 }
+  });
   const click = useClick(context);
   const dismiss = useDismiss(context);
   const role = useRole(context, { role: 'tooltip' });
@@ -60,9 +65,9 @@ export const KeywordTooltip: React.FC<{ keyword: string, stats: any, customDesc?
     role,
   ]);
 
-  const data = customDesc ? { description: customDesc, icon: '📌' } : keywordDictionary[keyword];
+  const data = customDesc ? { description: customDesc, icon: '📌' } : keywordDictionary[keywordString];
 
-  if (!data) return <span>[{keyword}]</span>;
+  if (!data) return <span>{keywordNode}</span>;
 
   return (
     <span className="inline-block relative">
@@ -72,7 +77,7 @@ export const KeywordTooltip: React.FC<{ keyword: string, stats: any, customDesc?
         className="text-amber-400 underline decoration-dashed underline-offset-4 cursor-pointer hover:bg-amber-400/10 rounded px-1 transition-colors font-bold"
       >
         {data.icon && <span className="mr-1">{data.icon}</span>}
-        {keyword}
+        {keywordNode}
       </span>
       <AnimatePresence>
         {isOpen && (
@@ -84,13 +89,13 @@ export const KeywordTooltip: React.FC<{ keyword: string, stats: any, customDesc?
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 5, scale: 0.95 }}
             transition={{ duration: 0.15 }}
-            className="z-[9999] max-w-xs bg-black/80 text-white p-3 rounded-lg shadow-xl border border-gray-700 backdrop-blur-sm text-sm leading-relaxed"
+            className="z-[9999] max-w-sm bg-black/90 text-white p-4 rounded-lg shadow-2xl border border-gray-600 backdrop-blur-md text-sm leading-relaxed"
           >
-            <div className="font-bold text-amber-400 mb-2 flex items-center gap-2 text-base border-b border-gray-700 pb-1">
+            <div className="font-bold text-amber-400 mb-2 flex items-center gap-2 text-base border-b border-gray-600 pb-2">
               {data.icon && <span>{data.icon}</span>}
-              {keyword}
+              {keywordNode}
             </div>
-            <div>
+            <div className="tooltip-content" style={{ whiteSpace: 'pre-wrap' }}>
               <ParsedText text={data.description} stats={stats} />
             </div>
           </motion.div>
@@ -99,6 +104,12 @@ export const KeywordTooltip: React.FC<{ keyword: string, stats: any, customDesc?
     </span>
   );
 }
+
+const getTextContent = (node: any): string => {
+  if (node.type === 'text') return node.data;
+  if (node.children) return node.children.map(getTextContent).join('');
+  return '';
+};
 
 export function ParsedText({ text, stats }: { text: string, stats: any }) {
   const replaceText = (str: string) => {
@@ -117,9 +128,9 @@ export function ParsedText({ text, stats }: { text: string, stats: any }) {
       if (content.includes('|')) {
         const [kw, ...descParts] = content.split('|');
         const desc = descParts.join('|');
-        parts.push(<KeywordTooltip key={`kw-${keyCounter++}`} keyword={kw} customDesc={desc} stats={stats} />);
+        parts.push(<KeywordTooltip key={`kw-${keyCounter++}`} keywordNode={kw} keywordString={kw} customDesc={desc} stats={stats} />);
       } else if (keywordDictionary[content]) {
-        parts.push(<KeywordTooltip key={`kw-${keyCounter++}`} keyword={content} stats={stats} />);
+        parts.push(<KeywordTooltip key={`kw-${keyCounter++}`} keywordNode={content} keywordString={content} stats={stats} />);
       } else {
         const evaluated = evaluateExpression(content, stats);
         if (evaluated !== content) {
@@ -138,6 +149,12 @@ export function ParsedText({ text, stats }: { text: string, stats: any }) {
 
   const options: HTMLReactParserOptions = {
     replace: (domNode: any) => {
+      if (domNode.type === 'tag' && domNode.name === 'span' && domNode.attribs && domNode.attribs.class && domNode.attribs.class.includes('keyword-memo')) {
+        const keywordString = getTextContent(domNode);
+        const keywordNode = domToReact(domNode.children, options);
+        const customDesc = domNode.attribs['data-memo'] || '';
+        return <KeywordTooltip keywordNode={keywordNode} keywordString={keywordString} customDesc={customDesc} stats={stats} />;
+      }
       if (domNode.type === 'text' && domNode.data) {
         const parsed = replaceText(domNode.data);
         if (parsed.length > 1 || parsed[0] !== domNode.data) {

@@ -495,6 +495,7 @@ function DMCard({ card, updateCard, deleteCard, openModal }: any) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [isPreviewMode, setIsPreviewMode] = useState(false);
+  const [editingMemo, setEditingMemo] = useState<{ id: string, html: string } | null>(null);
   const editorRef = useRef<HTMLDivElement>(null);
 
   // 한글 입력(IME) 끊김 방지를 위한 로컬 상태
@@ -536,6 +537,58 @@ function DMCard({ card, updateCard, deleteCard, openModal }: any) {
 
   const handleStatBlur = () => {
     updateCard(card.id, { stats: localStats });
+  };
+
+  const handleEditorClick = (e: React.MouseEvent) => {
+    if (isPreviewMode) return;
+    const target = e.target as HTMLElement;
+    if (target.classList.contains('keyword-memo')) {
+      const currentMemo = target.getAttribute('data-memo') || '';
+      if (!target.id) target.id = 'memo-' + Date.now();
+      setEditingMemo({ id: target.id, html: currentMemo });
+    }
+  };
+
+  const saveMemo = (html: string) => {
+    if (!editingMemo) return;
+    const span = document.getElementById(editingMemo.id);
+    if (span) {
+      if (html.trim() === '' || html === '<br>') {
+        const textNode = document.createTextNode(span.textContent || '');
+        span.parentNode?.replaceChild(textNode, span);
+      } else {
+        span.setAttribute('data-memo', html.replace(/"/g, '&quot;'));
+        span.removeAttribute('id');
+      }
+      if (editorRef.current) updateCard(card.id, { content: editorRef.current.innerHTML });
+    }
+    setEditingMemo(null);
+  };
+
+  const deleteMemo = () => {
+    if (!editingMemo) return;
+    const span = document.getElementById(editingMemo.id);
+    if (span) {
+      const textNode = document.createTextNode(span.textContent || '');
+      span.parentNode?.replaceChild(textNode, span);
+      if (editorRef.current) updateCard(card.id, { content: editorRef.current.innerHTML });
+    }
+    setEditingMemo(null);
+  };
+
+  const cancelMemo = () => {
+    if (!editingMemo) return;
+    const span = document.getElementById(editingMemo.id);
+    if (span) {
+      if (!span.getAttribute('data-memo')) {
+        const textNode = document.createTextNode(span.textContent || '');
+        span.parentNode?.replaceChild(textNode, span);
+        if (editorRef.current) updateCard(card.id, { content: editorRef.current.innerHTML });
+      } else {
+        span.removeAttribute('id');
+      }
+    }
+    setEditingMemo(null);
   };
 
   return (
@@ -587,12 +640,14 @@ function DMCard({ card, updateCard, deleteCard, openModal }: any) {
                 <button onMouseDown={e => {
                   e.preventDefault();
                   const selection = window.getSelection();
-                  const text = selection?.toString() || '';
-                  const keyword = text || prompt('키워드 이름을 입력하세요:');
-                  if (!keyword) return;
-                  const desc = prompt(`'${keyword}'에 대한 설명을 입력하세요:`);
-                  if (!desc) return;
-                  document.execCommand('insertText', false, `[${keyword}|${desc}]`);
+                  if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
+                    alert('툴팁을 추가할 단어를 드래그해서 선택해주세요.');
+                    return;
+                  }
+                  const tempId = 'memo-' + Date.now();
+                  const html = `<span id="${tempId}" class="keyword-memo" data-memo="">${selection.toString()}</span>`;
+                  document.execCommand('insertHTML', false, html);
+                  setEditingMemo({ id: tempId, html: '' });
                 }} style={{ background: 'var(--bg-secondary)', color: 'var(--text-main)' }}>📝 툴팁 추가</button>
                 <button onMouseDown={e => e.preventDefault()} onClick={() => setIsPreviewMode(!isPreviewMode)} style={{ marginLeft: 'auto', background: isPreviewMode ? 'var(--accent-primary)' : 'var(--bg-secondary)', color: '#fff' }}>
                   {isPreviewMode ? '✏️ 편집 모드' : '👁️ 미리보기 (키워드 확인)'}
@@ -606,12 +661,21 @@ function DMCard({ card, updateCard, deleteCard, openModal }: any) {
                 <div 
                   ref={editorRef} className="editor" contentEditable suppressContentEditableWarning
                   onBlur={e => updateCard(card.id, { content: e.currentTarget.innerHTML })}
+                  onClick={handleEditorClick}
                   dangerouslySetInnerHTML={{ __html: card.content }}
                 />
               )}
             </>
           )}
         </div>
+      )}
+      {editingMemo && (
+        <TooltipEditorModal
+          initialHtml={editingMemo.html}
+          onSave={saveMemo}
+          onCancel={cancelMemo}
+          onDelete={deleteMemo}
+        />
       )}
     </div>
   );
@@ -624,6 +688,7 @@ function PlayerDashboard({ session, user, onBack, openModal }: any) {
   const [showLoadModal, setShowLoadModal] = useState(false);
   const [savedSheets, setSavedSheets] = useState<any[]>([]);
   const [isPreviewMode, setIsPreviewMode] = useState(false);
+  const [editingMemo, setEditingMemo] = useState<{ id: string, html: string } | null>(null);
 
   // 한글 입력(IME) 끊김 방지를 위한 로컬 상태
   const [localCharName, setLocalCharName] = useState('');
@@ -681,6 +746,58 @@ function PlayerDashboard({ session, user, onBack, openModal }: any) {
     if (isNaN(num)) return score;
     let mod = Math.floor((num - 10) / 2);
     return mod >= 0 ? `+${mod}` : mod;
+  };
+
+  const handleEditorClick = (e: React.MouseEvent) => {
+    if (isPreviewMode) return;
+    const target = e.target as HTMLElement;
+    if (target.classList.contains('keyword-memo')) {
+      const currentMemo = target.getAttribute('data-memo') || '';
+      if (!target.id) target.id = 'memo-' + Date.now();
+      setEditingMemo({ id: target.id, html: currentMemo });
+    }
+  };
+
+  const saveMemo = (html: string) => {
+    if (!editingMemo) return;
+    const span = document.getElementById(editingMemo.id);
+    if (span) {
+      if (html.trim() === '' || html === '<br>') {
+        const textNode = document.createTextNode(span.textContent || '');
+        span.parentNode?.replaceChild(textNode, span);
+      } else {
+        span.setAttribute('data-memo', html.replace(/"/g, '&quot;'));
+        span.removeAttribute('id');
+      }
+      if (editorRef.current) updateSheet({ content: editorRef.current.innerHTML });
+    }
+    setEditingMemo(null);
+  };
+
+  const deleteMemo = () => {
+    if (!editingMemo) return;
+    const span = document.getElementById(editingMemo.id);
+    if (span) {
+      const textNode = document.createTextNode(span.textContent || '');
+      span.parentNode?.replaceChild(textNode, span);
+      if (editorRef.current) updateSheet({ content: editorRef.current.innerHTML });
+    }
+    setEditingMemo(null);
+  };
+
+  const cancelMemo = () => {
+    if (!editingMemo) return;
+    const span = document.getElementById(editingMemo.id);
+    if (span) {
+      if (!span.getAttribute('data-memo')) {
+        const textNode = document.createTextNode(span.textContent || '');
+        span.parentNode?.replaceChild(textNode, span);
+        if (editorRef.current) updateSheet({ content: editorRef.current.innerHTML });
+      } else {
+        span.removeAttribute('id');
+      }
+    }
+    setEditingMemo(null);
   };
 
   return (
@@ -750,12 +867,14 @@ function PlayerDashboard({ session, user, onBack, openModal }: any) {
               <button onMouseDown={e => {
                 e.preventDefault();
                 const selection = window.getSelection();
-                const text = selection?.toString() || '';
-                const keyword = text || prompt('키워드 이름을 입력하세요:');
-                if (!keyword) return;
-                const desc = prompt(`'${keyword}'에 대한 설명을 입력하세요:`);
-                if (!desc) return;
-                document.execCommand('insertText', false, `[${keyword}|${desc}]`);
+                if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
+                  alert('툴팁을 추가할 단어를 드래그해서 선택해주세요.');
+                  return;
+                }
+                const tempId = 'memo-' + Date.now();
+                const html = `<span id="${tempId}" class="keyword-memo" data-memo="">${selection.toString()}</span>`;
+                document.execCommand('insertHTML', false, html);
+                setEditingMemo({ id: tempId, html: '' });
               }} style={{ background: 'var(--bg-secondary)', color: 'var(--text-main)' }}>📝 툴팁 추가</button>
               <button onMouseDown={e => e.preventDefault()} onClick={() => setIsPreviewMode(!isPreviewMode)} style={{ marginLeft: 'auto', background: isPreviewMode ? 'var(--accent-primary)' : 'var(--bg-secondary)', color: '#fff' }}>
                 {isPreviewMode ? '✏️ 편집 모드' : '👁️ 미리보기 (키워드 확인)'}
@@ -770,6 +889,7 @@ function PlayerDashboard({ session, user, onBack, openModal }: any) {
                 ref={editorRef}
                 className="editor" contentEditable suppressContentEditableWarning
                 onBlur={e => updateSheet({ content: e.currentTarget.innerHTML })}
+                onClick={handleEditorClick}
                 dangerouslySetInnerHTML={{ __html: sheet.content }}
                 style={{ minHeight: '300px' }}
               />
@@ -803,6 +923,14 @@ function PlayerDashboard({ session, user, onBack, openModal }: any) {
             <button className="btn" style={{ width: '100%', marginTop: '20px', background: '#4b5563' }} onClick={() => setShowLoadModal(false)}>닫기</button>
           </div>
         </div>
+      )}
+      {editingMemo && (
+        <TooltipEditorModal
+          initialHtml={editingMemo.html}
+          onSave={saveMemo}
+          onCancel={cancelMemo}
+          onDelete={deleteMemo}
+        />
       )}
       </div>
     </div>
@@ -938,5 +1066,54 @@ function DiceRoller() {
         </div>
       )}
     </>
+  );
+}
+
+function TooltipEditorModal({ initialHtml, onSave, onCancel, onDelete }: { initialHtml: string, onSave: (html: string) => void, onCancel: () => void, onDelete: () => void }) {
+  const editorRef = useRef<HTMLDivElement>(null);
+  return (
+    <div className="modal-overlay" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.7)', zIndex: 2000, display: 'flex', justifyContent: 'center', alignItems: 'center' }} onClick={onCancel}>
+      <div className="card" style={{ width: '90%', maxWidth: '600px' }} onClick={e => e.stopPropagation()}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+          <h3 style={{ margin: 0, color: 'var(--accent-primary)' }}>툴팁 내용 편집</h3>
+          <span style={{ fontSize: '0.8em', color: 'var(--text-muted)' }}>Shift+Enter: 줄바꿈 / Enter: 단락구분</span>
+        </div>
+        <div className="toolbar" style={{ marginBottom: '10px', gap: '5px' }}>
+          <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('bold')} title="굵게"><b>B</b></button>
+          <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('italic')} title="기울임"><i>I</i></button>
+          <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('underline')} title="밑줄"><u>U</u></button>
+          <div style={{ width: '1px', height: '20px', background: 'var(--border-color)', margin: '0 5px' }} />
+          <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('fontSize', false, '3')} title="보통">T</button>
+          <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('fontSize', false, '5')} title="크게"><span style={{fontSize: '1.2em'}}>T</span></button>
+          <div style={{ width: '1px', height: '20px', background: 'var(--border-color)', margin: '0 5px' }} />
+          <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('foreColor', false, '#ef4444')} style={{ color: '#ef4444' }} title="빨강">●</button>
+          <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('foreColor', false, '#3b82f6')} style={{ color: '#3b82f6' }} title="파랑">●</button>
+          <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('foreColor', false, '#10b981')} style={{ color: '#10b981' }} title="초록">●</button>
+          <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('foreColor', false, '#f59e0b')} style={{ color: '#f59e0b' }} title="노랑">●</button>
+          <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('foreColor', false, '#ffffff')} style={{ color: '#ffffff' }} title="흰색">○</button>
+          <div style={{ width: '1px', height: '20px', background: 'var(--border-color)', margin: '0 5px' }} />
+          <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('insertUnorderedList')} title="글머리 기호">List</button>
+        </div>
+        <div 
+          ref={editorRef}
+          className="editor" 
+          contentEditable 
+          suppressContentEditableWarning
+          dangerouslySetInnerHTML={{ __html: initialHtml }}
+          style={{ minHeight: '200px', marginBottom: '15px', overflowY: 'auto', maxHeight: '400px' }}
+          onKeyDown={e => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+              // Standard Enter can sometimes create <div> or <p>, Shift+Enter usually <br>
+              // We'll let the browser handle it but ensure it's consistent
+            }
+          }}
+        />
+        <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+          <button className="btn btn-danger" onClick={onDelete}>툴팁 삭제</button>
+          <button className="btn" style={{ background: '#4b5563' }} onClick={onCancel}>취소</button>
+          <button className="btn btn-add" onClick={() => onSave(editorRef.current?.innerHTML || '')}>저장</button>
+        </div>
+      </div>
+    </div>
   );
 }
