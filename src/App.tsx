@@ -584,6 +584,16 @@ function DMCard({ card, updateCard, deleteCard, openModal }: any) {
                 <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('foreColor', false, '#ef4444')} style={{ color: 'var(--accent-danger)' }}>Red</button>
                 <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('foreColor', false, '#3b82f6')} style={{ color: 'var(--accent-primary)' }}>Blue</button>
                 <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('foreColor', false, '#ffffff')} style={{ color: '#ffffff' }}>White</button>
+                <button onMouseDown={e => {
+                  e.preventDefault();
+                  const selection = window.getSelection();
+                  const text = selection?.toString() || '';
+                  const keyword = text || prompt('키워드 이름을 입력하세요:');
+                  if (!keyword) return;
+                  const desc = prompt(`'${keyword}'에 대한 설명을 입력하세요:`);
+                  if (!desc) return;
+                  document.execCommand('insertText', false, `[${keyword}|${desc}]`);
+                }} style={{ background: 'var(--bg-secondary)', color: 'var(--text-main)' }}>📝 툴팁 추가</button>
                 <button onMouseDown={e => e.preventDefault()} onClick={() => setIsPreviewMode(!isPreviewMode)} style={{ marginLeft: 'auto', background: isPreviewMode ? 'var(--accent-primary)' : 'var(--bg-secondary)', color: '#fff' }}>
                   {isPreviewMode ? '✏️ 편집 모드' : '👁️ 미리보기 (키워드 확인)'}
                 </button>
@@ -737,6 +747,16 @@ function PlayerDashboard({ session, user, onBack, openModal }: any) {
               <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('foreColor', false, '#ef4444')} style={{ color: 'var(--accent-danger)' }}>Red</button>
               <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('foreColor', false, '#3b82f6')} style={{ color: 'var(--accent-primary)' }}>Blue</button>
               <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('foreColor', false, '#ffffff')} style={{ color: '#ffffff' }}>White</button>
+              <button onMouseDown={e => {
+                e.preventDefault();
+                const selection = window.getSelection();
+                const text = selection?.toString() || '';
+                const keyword = text || prompt('키워드 이름을 입력하세요:');
+                if (!keyword) return;
+                const desc = prompt(`'${keyword}'에 대한 설명을 입력하세요:`);
+                if (!desc) return;
+                document.execCommand('insertText', false, `[${keyword}|${desc}]`);
+              }} style={{ background: 'var(--bg-secondary)', color: 'var(--text-main)' }}>📝 툴팁 추가</button>
               <button onMouseDown={e => e.preventDefault()} onClick={() => setIsPreviewMode(!isPreviewMode)} style={{ marginLeft: 'auto', background: isPreviewMode ? 'var(--accent-primary)' : 'var(--bg-secondary)', color: '#fff' }}>
                 {isPreviewMode ? '✏️ 편집 모드' : '👁️ 미리보기 (키워드 확인)'}
               </button>

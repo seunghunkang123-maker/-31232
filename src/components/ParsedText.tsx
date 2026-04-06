@@ -38,7 +38,7 @@ function evaluateExpression(expr: string, stats: Record<string, any> = {}) {
   }
 }
 
-export const KeywordTooltip: React.FC<{ keyword: string, stats: any }> = ({ keyword, stats }) => {
+export const KeywordTooltip: React.FC<{ keyword: string, stats: any, customDesc?: string }> = ({ keyword, stats, customDesc }) => {
   const [isOpen, setIsOpen] = useState(false);
   const { refs, floatingStyles, context } = useFloating({
     open: isOpen,
@@ -60,7 +60,9 @@ export const KeywordTooltip: React.FC<{ keyword: string, stats: any }> = ({ keyw
     role,
   ]);
 
-  const data = keywordDictionary[keyword];
+  const data = customDesc ? { description: customDesc, icon: '📌' } : keywordDictionary[keyword];
+
+  if (!data) return <span>[{keyword}]</span>;
 
   return (
     <span className="inline-block relative">
@@ -112,7 +114,11 @@ export function ParsedText({ text, stats }: { text: string, stats: any }) {
       }
       const content = match[1];
       
-      if (keywordDictionary[content]) {
+      if (content.includes('|')) {
+        const [kw, ...descParts] = content.split('|');
+        const desc = descParts.join('|');
+        parts.push(<KeywordTooltip key={`kw-${keyCounter++}`} keyword={kw} customDesc={desc} stats={stats} />);
+      } else if (keywordDictionary[content]) {
         parts.push(<KeywordTooltip key={`kw-${keyCounter++}`} keyword={content} stats={stats} />);
       } else {
         const evaluated = evaluateExpression(content, stats);
