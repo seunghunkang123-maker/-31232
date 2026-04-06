@@ -173,6 +173,56 @@ h1, h2, h3, .card-title, .secret-badge {
     }
 }
 
+/* 메인 레이아웃 및 메모 사이드바 */
+.main-layout {
+    display: flex;
+    gap: 20px;
+    max-width: 1400px;
+    margin: 0 auto;
+    align-items: flex-start;
+    padding: 0 20px;
+}
+.memo-sidebar {
+    width: 280px;
+    background: rgba(30, 41, 59, 0.8);
+    backdrop-filter: blur(10px);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 20px;
+    height: calc(100vh - 120px);
+    position: sticky;
+    top: 20px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+    flex-shrink: 0;
+}
+
+@media (max-width: 900px) {
+    .main-layout {
+        flex-direction: column;
+        padding: 0 10px;
+    }
+    .memo-sidebar {
+        width: 100%;
+        height: auto;
+        max-height: 400px;
+        position: static;
+        margin-bottom: 20px;
+    }
+    .card-container {
+        grid-template-columns: 1fr;
+    }
+    .session-bar {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    .session-bar > div {
+        justify-content: space-between;
+    }
+}
+
 /* 기믹 및 상태이상 패널 */
 .gimmick-panel {
     background: var(--card-bg);

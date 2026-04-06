@@ -5,7 +5,7 @@ import { Dices, Swords, User, LogOut, Plus, Trash2, Eye, EyeOff, BookOpen, Save,
 // --- Types ---
 type CardType = 'statblock' | 'image' | 'text';
 
-interface Stats { str: number; dex: number; con: number; int: number; wis: number; cha: number; }
+interface Stats { str: number | string; dex: number | string; con: number | string; int: number | string; wis: number | string; cha: number | string; }
 
 interface CardData {
   id: string; session_id: string; type: CardType; title: string; content: string;
@@ -368,7 +368,7 @@ function MemoSidebar({ cards, sheet }: { cards: CardData[], sheet?: PlayerSheet 
     };
 
     cards.forEach(card => {
-      if (card.is_revealed || !sheet) { // DM sees all, Player sees revealed
+      if (card.is_revealed) { // 몬스터가 가려지면 메모도 가림
         extractFromHtml(card.content);
       }
     });
@@ -384,22 +384,7 @@ function MemoSidebar({ cards, sheet }: { cards: CardData[], sheet?: PlayerSheet 
   if (memos.length === 0) return null;
 
   return (
-    <div className="memo-sidebar" style={{
-      width: '280px',
-      background: 'rgba(30, 41, 59, 0.8)',
-      backdropFilter: 'blur(10px)',
-      border: '1px solid var(--border-color)',
-      borderRadius: '8px',
-      padding: '20px',
-      height: 'calc(100vh - 120px)',
-      position: 'sticky',
-      top: '20px',
-      overflowY: 'auto',
-      display: 'flex',
-      flexDirection: 'column',
-      gap: '15px',
-      flexShrink: 0
-    }}>
+    <div className="memo-sidebar">
       <h3 style={{ margin: 0, color: 'var(--accent-primary)', borderBottom: '1px solid var(--border-color)', paddingBottom: '10px', display: 'flex', alignItems: 'center', gap: '8px' }}>
         <BookOpen size={18} />
         키워드 메모
@@ -500,7 +485,7 @@ function DMDashboard({ session, user, onBack, openModal }: any) {
   };
 
   return (
-    <div style={{ display: 'flex', gap: '20px', maxWidth: '1400px', margin: '0 auto', alignItems: 'flex-start', padding: '0 20px' }}>
+    <div className="main-layout">
       <div className="dashboard" style={{ flex: 1, minWidth: 0, padding: '20px 0', margin: 0 }}>
         <div className="header">
         <h2 style={{ margin: 0, color: 'var(--text-main)' }}>현재 세션: <span style={{ color: 'var(--accent-primary)' }}>{session.name}</span> <span style={{fontSize:'0.6em', color:'var(--text-muted)'}}>(마스터)</span></h2>
@@ -571,6 +556,8 @@ function DMCard({ card, updateCard, deleteCard, openModal }: any) {
   // 한글 입력(IME) 끊김 방지를 위한 로컬 상태
   const [localTitle, setLocalTitle] = useState(card.title);
   const [localStats, setLocalStats] = useState(card.stats);
+  const [editingMemo, setEditingMemo] = useState<{ target: HTMLElement, text: string } | null>(null);
+  const [addingMemo, setAddingMemo] = useState<{ range: Range, text: string } | null>(null);
 
   useEffect(() => { setLocalTitle(card.title); }, [card.title]);
   useEffect(() => { setLocalStats(card.stats); }, [card.stats]);
@@ -601,7 +588,7 @@ function DMCard({ card, updateCard, deleteCard, openModal }: any) {
     }
   };
 
-  const handleStatChange = (stat: keyof Stats, val: number) => {
+  const handleStatChange = (stat: keyof Stats, val: string | number) => {
     setLocalStats({ ...localStats, [stat]: val });
   };
 
@@ -615,34 +602,46 @@ function DMCard({ card, updateCard, deleteCard, openModal }: any) {
       alert('메모를 추가할 단어를 드래그해서 선택해주세요.');
       return;
     }
-    const memo = prompt('선택한 단어에 대한 메모를 입력하세요:');
-    if (memo) {
-      const selectedText = selection.toString();
-      const html = `<span class="keyword-memo" data-memo="${memo.replace(/"/g, '&quot;')}" style="border-bottom: 2px dashed var(--accent-primary); cursor: help; background-color: rgba(59, 130, 246, 0.1); padding: 0 2px; border-radius: 2px;">${selectedText}</span>`;
-      document.execCommand('insertHTML', false, html);
+    const range = selection.getRangeAt(0).cloneRange();
+    setAddingMemo({ range, text: '' });
+  };
+
+  const saveNewMemo = () => {
+    if (!addingMemo) return;
+    if (addingMemo.text.trim() !== '') {
+      const span = document.createElement('span');
+      span.className = 'keyword-memo';
+      span.setAttribute('data-memo', addingMemo.text.replace(/"/g, '&quot;'));
+      span.style.cssText = 'border-bottom: 2px dashed var(--accent-primary); cursor: help; background-color: rgba(59, 130, 246, 0.1); padding: 0 2px; border-radius: 2px;';
+      span.appendChild(addingMemo.range.extractContents());
+      addingMemo.range.insertNode(span);
       if (editorRef.current) {
         updateCard(card.id, { content: editorRef.current.innerHTML });
       }
     }
+    setAddingMemo(null);
   };
 
   const handleEditorClick = (e: React.MouseEvent) => {
     const target = e.target as HTMLElement;
     if (target.classList.contains('keyword-memo')) {
       const currentMemo = target.getAttribute('data-memo') || '';
-      const newMemo = prompt('메모 수정 (내용을 비우면 메모가 삭제됩니다):', currentMemo);
-      if (newMemo !== null) {
-        if (newMemo.trim() === '') {
-          const textNode = document.createTextNode(target.textContent || '');
-          target.parentNode?.replaceChild(textNode, target);
-        } else {
-          target.setAttribute('data-memo', newMemo.replace(/"/g, '&quot;'));
-        }
-        if (editorRef.current) {
-          updateCard(card.id, { content: editorRef.current.innerHTML });
-        }
-      }
+      setEditingMemo({ target, text: currentMemo });
     }
+  };
+
+  const saveMemo = (newMemo: string) => {
+    if (!editingMemo) return;
+    if (newMemo.trim() === '') {
+      const textNode = document.createTextNode(editingMemo.target.textContent || '');
+      editingMemo.target.parentNode?.replaceChild(textNode, editingMemo.target);
+    } else {
+      editingMemo.target.setAttribute('data-memo', newMemo.replace(/"/g, '&quot;'));
+    }
+    if (editorRef.current) {
+      updateCard(card.id, { content: editorRef.current.innerHTML });
+    }
+    setEditingMemo(null);
   };
 
   return (
@@ -676,7 +675,7 @@ function DMCard({ card, updateCard, deleteCard, openModal }: any) {
               {(['str', 'dex', 'con', 'int', 'wis', 'cha'] as const).map(stat => (
                 <div className="stat-box" key={stat}>
                   <span className="stat-name">{stat.toUpperCase()}</span>
-                  <input type="number" className="stat-input" value={localStats[stat]} onChange={e => handleStatChange(stat, parseInt(e.target.value) || 0)} onBlur={handleStatBlur} />
+                  <input type="text" className="stat-input" value={localStats[stat]} onChange={e => handleStatChange(stat, e.target.value)} onBlur={handleStatBlur} />
                 </div>
               ))}
             </div>
@@ -703,6 +702,42 @@ function DMCard({ card, updateCard, deleteCard, openModal }: any) {
           )}
         </div>
       )}
+
+      {editingMemo && (
+        <div className="modal-overlay" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.7)', zIndex: 2000, display: 'flex', justifyContent: 'center', alignItems: 'center' }} onClick={() => setEditingMemo(null)}>
+          <div className="card" style={{ width: '90%', maxWidth: '400px' }} onClick={e => e.stopPropagation()}>
+            <h3 style={{ marginTop: 0, color: 'var(--accent-primary)', marginBottom: '15px' }}>메모 수정</h3>
+            <textarea 
+              value={editingMemo.text} 
+              onChange={e => setEditingMemo({ ...editingMemo, text: e.target.value })}
+              style={{ width: '100%', height: '120px', background: 'var(--bg-main)', color: 'var(--text-main)', border: '1px solid var(--border-color)', borderRadius: '6px', padding: '10px', marginBottom: '15px', fontFamily: 'inherit', resize: 'vertical' }}
+            />
+            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+              <button className="btn btn-danger" onClick={() => saveMemo('')}>메모 삭제</button>
+              <button className="btn" style={{ background: '#4b5563' }} onClick={() => setEditingMemo(null)}>취소</button>
+              <button className="btn btn-add" onClick={() => saveMemo(editingMemo.text)}>저장</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {addingMemo && (
+        <div className="modal-overlay" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.7)', zIndex: 2000, display: 'flex', justifyContent: 'center', alignItems: 'center' }} onClick={() => setAddingMemo(null)}>
+          <div className="card" style={{ width: '90%', maxWidth: '400px' }} onClick={e => e.stopPropagation()}>
+            <h3 style={{ marginTop: 0, color: 'var(--accent-primary)', marginBottom: '15px' }}>새 메모 추가</h3>
+            <textarea 
+              value={addingMemo.text} 
+              onChange={e => setAddingMemo({ ...addingMemo, text: e.target.value })}
+              placeholder="메모 내용을 입력하세요..."
+              style={{ width: '100%', height: '120px', background: 'var(--bg-main)', color: 'var(--text-main)', border: '1px solid var(--border-color)', borderRadius: '6px', padding: '10px', marginBottom: '15px', fontFamily: 'inherit', resize: 'vertical' }}
+            />
+            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+              <button className="btn" style={{ background: '#4b5563' }} onClick={() => setAddingMemo(null)}>취소</button>
+              <button className="btn btn-add" onClick={saveNewMemo}>추가</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -717,6 +752,8 @@ function PlayerDashboard({ session, user, onBack, openModal }: any) {
   // 한글 입력(IME) 끊김 방지를 위한 로컬 상태
   const [localCharName, setLocalCharName] = useState('');
   const [localStats, setLocalStats] = useState<Stats | null>(null);
+  const [editingMemo, setEditingMemo] = useState<{ target: HTMLElement, text: string } | null>(null);
+  const [addingMemo, setAddingMemo] = useState<{ range: Range, text: string } | null>(null);
   const editorRef = useRef<HTMLDivElement>(null);
 
   const fetchCards = async () => {
@@ -765,8 +802,10 @@ function PlayerDashboard({ session, user, onBack, openModal }: any) {
     await supabase!.from('player_sheets').update(updates).eq('id', sheet.id);
   };
 
-  const getModifier = (score: number) => {
-    let mod = Math.floor((score - 10) / 2);
+  const getModifier = (score: number | string) => {
+    const num = parseInt(score as string, 10);
+    if (isNaN(num)) return score;
+    let mod = Math.floor((num - 10) / 2);
     return mod >= 0 ? `+${mod}` : mod;
   };
 
@@ -776,38 +815,50 @@ function PlayerDashboard({ session, user, onBack, openModal }: any) {
       alert('메모를 추가할 단어를 드래그해서 선택해주세요.');
       return;
     }
-    const memo = prompt('선택한 단어에 대한 메모를 입력하세요:');
-    if (memo) {
-      const selectedText = selection.toString();
-      const html = `<span class="keyword-memo" data-memo="${memo.replace(/"/g, '&quot;')}" style="border-bottom: 2px dashed var(--accent-primary); cursor: help; background-color: rgba(59, 130, 246, 0.1); padding: 0 2px; border-radius: 2px;">${selectedText}</span>`;
-      document.execCommand('insertHTML', false, html);
+    const range = selection.getRangeAt(0).cloneRange();
+    setAddingMemo({ range, text: '' });
+  };
+
+  const saveNewMemo = () => {
+    if (!addingMemo) return;
+    if (addingMemo.text.trim() !== '') {
+      const span = document.createElement('span');
+      span.className = 'keyword-memo';
+      span.setAttribute('data-memo', addingMemo.text.replace(/"/g, '&quot;'));
+      span.style.cssText = 'border-bottom: 2px dashed var(--accent-primary); cursor: help; background-color: rgba(59, 130, 246, 0.1); padding: 0 2px; border-radius: 2px;';
+      span.appendChild(addingMemo.range.extractContents());
+      addingMemo.range.insertNode(span);
       if (editorRef.current) {
         updateSheet({ content: editorRef.current.innerHTML });
       }
     }
+    setAddingMemo(null);
   };
 
   const handleEditorClick = (e: React.MouseEvent) => {
     const target = e.target as HTMLElement;
     if (target.classList.contains('keyword-memo')) {
       const currentMemo = target.getAttribute('data-memo') || '';
-      const newMemo = prompt('메모 수정 (내용을 비우면 메모가 삭제됩니다):', currentMemo);
-      if (newMemo !== null) {
-        if (newMemo.trim() === '') {
-          const textNode = document.createTextNode(target.textContent || '');
-          target.parentNode?.replaceChild(textNode, target);
-        } else {
-          target.setAttribute('data-memo', newMemo.replace(/"/g, '&quot;'));
-        }
-        if (editorRef.current) {
-          updateSheet({ content: editorRef.current.innerHTML });
-        }
-      }
+      setEditingMemo({ target, text: currentMemo });
     }
   };
 
+  const saveMemo = (newMemo: string) => {
+    if (!editingMemo) return;
+    if (newMemo.trim() === '') {
+      const textNode = document.createTextNode(editingMemo.target.textContent || '');
+      editingMemo.target.parentNode?.replaceChild(textNode, editingMemo.target);
+    } else {
+      editingMemo.target.setAttribute('data-memo', newMemo.replace(/"/g, '&quot;'));
+    }
+    if (editorRef.current) {
+      updateSheet({ content: editorRef.current.innerHTML });
+    }
+    setEditingMemo(null);
+  };
+
   return (
-    <div style={{ display: 'flex', gap: '20px', maxWidth: '1400px', margin: '0 auto', alignItems: 'flex-start', padding: '0 20px' }}>
+    <div className="main-layout">
       <div className="dashboard" style={{ flex: 1, minWidth: 0, padding: '20px 0', margin: 0 }}>
         <div className="header">
         <h2 style={{ margin: 0, color: 'var(--text-main)' }}>현재 세션: <span style={{ color: 'var(--accent-primary)' }}>{session.name}</span> <span style={{fontSize:'0.6em', color:'var(--text-muted)'}}>(플레이어)</span></h2>
@@ -855,7 +906,7 @@ function PlayerDashboard({ session, user, onBack, openModal }: any) {
               {(['str', 'dex', 'con', 'int', 'wis', 'cha'] as const).map(stat => (
                 <div className="stat-box" key={stat}>
                   <span className="stat-name">{stat.toUpperCase()}</span>
-                  <input type="number" className="stat-input" value={localStats[stat]} onChange={e => setLocalStats({ ...localStats, [stat]: parseInt(e.target.value) || 0 })} onBlur={() => updateSheet({ stats: localStats })} />
+                  <input type="text" className="stat-input" value={localStats[stat]} onChange={e => setLocalStats({ ...localStats, [stat]: e.target.value })} onBlur={() => updateSheet({ stats: localStats })} />
                   <span className="stat-val" style={{ fontSize: '0.9em', color: 'var(--text-muted)' }}>({getModifier(localStats[stat])})</span>
                 </div>
               ))}
@@ -881,6 +932,42 @@ function PlayerDashboard({ session, user, onBack, openModal }: any) {
           </div>
         )}
       </div>
+
+      {editingMemo && (
+        <div className="modal-overlay" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.7)', zIndex: 2000, display: 'flex', justifyContent: 'center', alignItems: 'center' }} onClick={() => setEditingMemo(null)}>
+          <div className="card" style={{ width: '90%', maxWidth: '400px' }} onClick={e => e.stopPropagation()}>
+            <h3 style={{ marginTop: 0, color: 'var(--accent-primary)', marginBottom: '15px' }}>메모 수정</h3>
+            <textarea 
+              value={editingMemo.text} 
+              onChange={e => setEditingMemo({ ...editingMemo, text: e.target.value })}
+              style={{ width: '100%', height: '120px', background: 'var(--bg-main)', color: 'var(--text-main)', border: '1px solid var(--border-color)', borderRadius: '6px', padding: '10px', marginBottom: '15px', fontFamily: 'inherit', resize: 'vertical' }}
+            />
+            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+              <button className="btn btn-danger" onClick={() => saveMemo('')}>메모 삭제</button>
+              <button className="btn" style={{ background: '#4b5563' }} onClick={() => setEditingMemo(null)}>취소</button>
+              <button className="btn btn-add" onClick={() => saveMemo(editingMemo.text)}>저장</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {addingMemo && (
+        <div className="modal-overlay" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.7)', zIndex: 2000, display: 'flex', justifyContent: 'center', alignItems: 'center' }} onClick={() => setAddingMemo(null)}>
+          <div className="card" style={{ width: '90%', maxWidth: '400px' }} onClick={e => e.stopPropagation()}>
+            <h3 style={{ marginTop: 0, color: 'var(--accent-primary)', marginBottom: '15px' }}>새 메모 추가</h3>
+            <textarea 
+              value={addingMemo.text} 
+              onChange={e => setAddingMemo({ ...addingMemo, text: e.target.value })}
+              placeholder="메모 내용을 입력하세요..."
+              style={{ width: '100%', height: '120px', background: 'var(--bg-main)', color: 'var(--text-main)', border: '1px solid var(--border-color)', borderRadius: '6px', padding: '10px', marginBottom: '15px', fontFamily: 'inherit', resize: 'vertical' }}
+            />
+            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+              <button className="btn" style={{ background: '#4b5563' }} onClick={() => setAddingMemo(null)}>취소</button>
+              <button className="btn btn-add" onClick={saveNewMemo}>추가</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showLoadModal && (
         <div className="modal-overlay" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.7)', zIndex: 1000, display: 'flex', justifyContent: 'center', alignItems: 'center' }} onClick={() => setShowLoadModal(false)}>
