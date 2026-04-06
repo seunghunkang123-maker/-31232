@@ -648,7 +648,11 @@ function DMCard({ card, updateCard, deleteCard, openModal }: any) {
                   const tempId = 'memo-' + Date.now();
                   const html = `<span id="${tempId}" class="keyword-memo" data-memo="">${selection.toString()}</span>`;
                   document.execCommand('insertHTML', false, html);
-                  setEditingMemo({ id: tempId, html: '' });
+                  // Ensure the inserted element is correctly identified
+                  const inserted = document.getElementById(tempId);
+                  if (inserted) {
+                    setEditingMemo({ id: tempId, html: '' });
+                  }
                 }} style={{ background: 'var(--bg-secondary)', color: 'var(--text-main)' }}>📝 툴팁 추가</button>
                 <button onMouseDown={e => e.preventDefault()} onClick={() => setIsPreviewMode(!isPreviewMode)} style={{ marginLeft: 'auto', background: isPreviewMode ? 'var(--accent-primary)' : 'var(--bg-secondary)', color: '#fff' }}>
                   {isPreviewMode ? '✏️ 편집 모드' : '👁️ 미리보기 (키워드 확인)'}

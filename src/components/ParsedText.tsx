@@ -149,17 +149,27 @@ export function ParsedText({ text, stats }: { text: string, stats: any }) {
 
   const options: HTMLReactParserOptions = {
     replace: (domNode: any) => {
-      if (domNode.type === 'tag' && domNode.name.toLowerCase() === 'span' && domNode.attribs) {
-        const className = domNode.attribs.class || domNode.attribs.className || '';
-        const isKeywordMemo = className.split(' ').includes('keyword-memo');
-        const hasMemoAttr = 'data-memo' in domNode.attribs;
+      if (domNode.type === 'tag' && domNode.attribs) {
+        const attribs = domNode.attribs;
+        const className = attribs.class || attribs.className || '';
+        const isKeywordMemo = className.split(/\s+/).includes('keyword-memo');
+        const hasMemoAttr = 'data-memo' in attribs;
         
-        if (isKeywordMemo) {
+        if (isKeywordMemo || hasMemoAttr) {
           const keywordString = getTextContent(domNode);
           const keywordNode = domToReact(domNode.children, options);
-          const customDesc = domNode.attribs['data-memo'];
-          // Even if customDesc is empty string, we should treat it as a custom tooltip if the attribute exists
-          return <KeywordTooltip keywordNode={keywordNode} keywordString={keywordString} customDesc={customDesc} stats={stats} />;
+          const customDesc = attribs['data-memo'];
+          
+          // If it has the class or the attribute, we treat it as a custom tooltip
+          return (
+            <KeywordTooltip 
+              key={domNode.attribs.id || Math.random().toString()}
+              keywordNode={keywordNode} 
+              keywordString={keywordString} 
+              customDesc={customDesc} 
+              stats={stats} 
+            />
+          );
         }
       }
       if (domNode.type === 'text' && domNode.data) {
