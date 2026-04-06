@@ -551,13 +551,14 @@ function DMCard({ card, updateCard, deleteCard, openModal }: any) {
 
   const saveMemo = (html: string) => {
     if (!editingMemo) return;
-    const span = editorRef.current?.querySelector('#' + editingMemo.id) as HTMLElement;
+    const span = document.getElementById(editingMemo.id);
     if (span) {
       if (html.trim() === '' || html === '<br>') {
         const textNode = document.createTextNode(span.textContent || '');
         span.parentNode?.replaceChild(textNode, span);
       } else {
-        span.setAttribute('data-memo', html.replace(/"/g, '&quot;'));
+        span.dataset.memo = html;
+        span.title = "툴팁 내용: " + html.replace(/<[^>]*>/g, '').substring(0, 50) + "... (미리보기 모드에서 확인 가능)";
         span.removeAttribute('id');
       }
       if (editorRef.current) updateCard(card.id, { content: editorRef.current.innerHTML });
@@ -567,7 +568,7 @@ function DMCard({ card, updateCard, deleteCard, openModal }: any) {
 
   const deleteMemo = () => {
     if (!editingMemo) return;
-    const span = editorRef.current?.querySelector('#' + editingMemo.id) as HTMLElement;
+    const span = document.getElementById(editingMemo.id);
     if (span) {
       const textNode = document.createTextNode(span.textContent || '');
       span.parentNode?.replaceChild(textNode, span);
@@ -578,7 +579,7 @@ function DMCard({ card, updateCard, deleteCard, openModal }: any) {
 
   const cancelMemo = () => {
     if (!editingMemo) return;
-    const span = editorRef.current?.querySelector('#' + editingMemo.id) as HTMLElement;
+    const span = document.getElementById(editingMemo.id);
     if (span) {
       if (!span.getAttribute('data-memo')) {
         const textNode = document.createTextNode(span.textContent || '');
@@ -644,24 +645,9 @@ function DMCard({ card, updateCard, deleteCard, openModal }: any) {
                     alert('툴팁을 추가할 단어를 드래그해서 선택해주세요.');
                     return;
                   }
-                  
-                  const range = selection.getRangeAt(0);
                   const tempId = 'memo-' + Date.now();
-                  const span = document.createElement('span');
-                  span.id = tempId;
-                  span.className = 'keyword-memo';
-                  span.setAttribute('data-memo', '');
-                  span.textContent = selection.toString();
-                  
-                  range.deleteContents();
-                  range.insertNode(span);
-                  
-                  // Selection을 새로 삽입된 span으로 이동 (선택사항이지만 깔끔함)
-                  selection.removeAllRanges();
-                  const newRange = document.createRange();
-                  newRange.selectNodeContents(span);
-                  selection.addRange(newRange);
-
+                  const html = `<span id="${tempId}" class="keyword-memo" data-memo="">${selection.toString()}</span>`;
+                  document.execCommand('insertHTML', false, html);
                   setEditingMemo({ id: tempId, html: '' });
                 }} style={{ background: 'var(--bg-secondary)', color: 'var(--text-main)' }}>📝 툴팁 추가</button>
                 <button onMouseDown={e => e.preventDefault()} onClick={() => setIsPreviewMode(!isPreviewMode)} style={{ marginLeft: 'auto', background: isPreviewMode ? 'var(--accent-primary)' : 'var(--bg-secondary)', color: '#fff' }}>
@@ -775,13 +761,14 @@ function PlayerDashboard({ session, user, onBack, openModal }: any) {
 
   const saveMemo = (html: string) => {
     if (!editingMemo) return;
-    const span = editorRef.current?.querySelector('#' + editingMemo.id) as HTMLElement;
+    const span = document.getElementById(editingMemo.id);
     if (span) {
       if (html.trim() === '' || html === '<br>') {
         const textNode = document.createTextNode(span.textContent || '');
         span.parentNode?.replaceChild(textNode, span);
       } else {
-        span.setAttribute('data-memo', html.replace(/"/g, '&quot;'));
+        span.dataset.memo = html;
+        span.title = "툴팁 내용: " + html.replace(/<[^>]*>/g, '').substring(0, 50) + "... (미리보기 모드에서 확인 가능)";
         span.removeAttribute('id');
       }
       if (editorRef.current) updateSheet({ content: editorRef.current.innerHTML });
@@ -791,7 +778,7 @@ function PlayerDashboard({ session, user, onBack, openModal }: any) {
 
   const deleteMemo = () => {
     if (!editingMemo) return;
-    const span = editorRef.current?.querySelector('#' + editingMemo.id) as HTMLElement;
+    const span = document.getElementById(editingMemo.id);
     if (span) {
       const textNode = document.createTextNode(span.textContent || '');
       span.parentNode?.replaceChild(textNode, span);
@@ -802,7 +789,7 @@ function PlayerDashboard({ session, user, onBack, openModal }: any) {
 
   const cancelMemo = () => {
     if (!editingMemo) return;
-    const span = editorRef.current?.querySelector('#' + editingMemo.id) as HTMLElement;
+    const span = document.getElementById(editingMemo.id);
     if (span) {
       if (!span.getAttribute('data-memo')) {
         const textNode = document.createTextNode(span.textContent || '');
@@ -886,24 +873,9 @@ function PlayerDashboard({ session, user, onBack, openModal }: any) {
                   alert('툴팁을 추가할 단어를 드래그해서 선택해주세요.');
                   return;
                 }
-                
-                const range = selection.getRangeAt(0);
                 const tempId = 'memo-' + Date.now();
-                const span = document.createElement('span');
-                span.id = tempId;
-                span.className = 'keyword-memo';
-                span.setAttribute('data-memo', '');
-                span.textContent = selection.toString();
-                
-                range.deleteContents();
-                range.insertNode(span);
-                
-                // Selection을 새로 삽입된 span으로 이동
-                selection.removeAllRanges();
-                const newRange = document.createRange();
-                newRange.selectNodeContents(span);
-                selection.addRange(newRange);
-
+                const html = `<span id="${tempId}" class="keyword-memo" data-memo="">${selection.toString()}</span>`;
+                document.execCommand('insertHTML', false, html);
                 setEditingMemo({ id: tempId, html: '' });
               }} style={{ background: 'var(--bg-secondary)', color: 'var(--text-main)' }}>📝 툴팁 추가</button>
               <button onMouseDown={e => e.preventDefault()} onClick={() => setIsPreviewMode(!isPreviewMode)} style={{ marginLeft: 'auto', background: isPreviewMode ? 'var(--accent-primary)' : 'var(--bg-secondary)', color: '#fff' }}>

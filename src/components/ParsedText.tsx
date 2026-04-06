@@ -65,7 +65,7 @@ export const KeywordTooltip: React.FC<{ keywordNode: React.ReactNode, keywordStr
     role,
   ]);
 
-  const data = customDesc ? { description: customDesc, icon: '📌' } : keywordDictionary[keywordString];
+  const data = customDesc !== undefined ? { description: customDesc, icon: '📌' } : keywordDictionary[keywordString];
 
   if (!data) return <span>{keywordNode}</span>;
 
@@ -149,11 +149,18 @@ export function ParsedText({ text, stats }: { text: string, stats: any }) {
 
   const options: HTMLReactParserOptions = {
     replace: (domNode: any) => {
-      if (domNode.type === 'tag' && domNode.name === 'span' && domNode.attribs && domNode.attribs.class && domNode.attribs.class.includes('keyword-memo')) {
-        const keywordString = getTextContent(domNode);
-        const keywordNode = domToReact(domNode.children, options);
-        const customDesc = domNode.attribs['data-memo'] || '';
-        return <KeywordTooltip keywordNode={keywordNode} keywordString={keywordString} customDesc={customDesc} stats={stats} />;
+      if (domNode.type === 'tag' && domNode.name.toLowerCase() === 'span' && domNode.attribs) {
+        const className = domNode.attribs.class || domNode.attribs.className || '';
+        const isKeywordMemo = className.split(' ').includes('keyword-memo');
+        const hasMemoAttr = 'data-memo' in domNode.attribs;
+        
+        if (isKeywordMemo) {
+          const keywordString = getTextContent(domNode);
+          const keywordNode = domToReact(domNode.children, options);
+          const customDesc = domNode.attribs['data-memo'];
+          // Even if customDesc is empty string, we should treat it as a custom tooltip if the attribute exists
+          return <KeywordTooltip keywordNode={keywordNode} keywordString={keywordString} customDesc={customDesc} stats={stats} />;
+        }
       }
       if (domNode.type === 'text' && domNode.data) {
         const parsed = replaceText(domNode.data);
