@@ -1,0 +1,145 @@
+import React, { useState } from 'react';
+import parse, { HTMLReactParserOptions } from 'html-react-parser';
+import { useFloating, autoUpdate, offset, flip, shift, useHover, useFocus, useDismiss, useRole, useInteractions, useClick } from '@floating-ui/react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { keywordDictionary } from '../lib/keywordDictionary';
+
+function evaluateExpression(expr: string, stats: Record<string, any> = {}) {
+  let parsedExpr = expr;
+  const statMap: Record<string, string> = {
+    '근력': 'str', 'STR': 'str', 'str': 'str',
+    '민첩': 'dex', 'DEX': 'dex', 'dex': 'dex',
+    '건강': 'con', 'CON': 'con', 'con': 'con',
+    '지능': 'int', 'INT': 'int', 'int': 'int',
+    '지혜': 'wis', 'WIS': 'wis', 'wis': 'wis',
+    '매력': 'cha', 'CHA': 'cha', 'cha': 'cha',
+    '공격력': 'str'
+  };
+  
+  let hasStat = false;
+  Object.keys(statMap).forEach(key => {
+    if (parsedExpr.includes(key)) {
+      hasStat = true;
+      const statVal = Number(stats[statMap[key]]) || 0;
+      parsedExpr = parsedExpr.replace(new RegExp(key, 'g'), statVal.toString());
+    }
+  });
+
+  if (!hasStat) return expr;
+
+  try {
+    if (/^[0-9\.\+\-\*\/\(\)\s]+$/.test(parsedExpr)) {
+      const result = new Function('return ' + parsedExpr)();
+      return Number.isInteger(result) ? result : Number(result).toFixed(1);
+    }
+    return expr;
+  } catch (e) {
+    return expr;
+  }
+}
+
+export const KeywordTooltip: React.FC<{ keyword: string, stats: any }> = ({ keyword, stats }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const { refs, floatingStyles, context } = useFloating({
+    open: isOpen,
+    onOpenChange: setIsOpen,
+    placement: 'top',
+    whileElementsMounted: autoUpdate,
+    middleware: [offset(8), flip(), shift({ padding: 8 })],
+  });
+
+  const hover = useHover(context, { move: false });
+  const click = useClick(context);
+  const dismiss = useDismiss(context);
+  const role = useRole(context, { role: 'tooltip' });
+
+  const { getReferenceProps, getFloatingProps } = useInteractions([
+    hover,
+    click,
+    dismiss,
+    role,
+  ]);
+
+  const data = keywordDictionary[keyword];
+
+  return (
+    <span className="inline-block relative">
+      <span
+        ref={refs.setReference}
+        {...getReferenceProps()}
+        className="text-amber-400 underline decoration-dashed underline-offset-4 cursor-pointer hover:bg-amber-400/10 rounded px-1 transition-colors font-bold"
+      >
+        {data.icon && <span className="mr-1">{data.icon}</span>}
+        {keyword}
+      </span>
+      <AnimatePresence>
+        {isOpen && (
+          <motion.div
+            ref={refs.setFloating}
+            style={floatingStyles}
+            {...getFloatingProps()}
+            initial={{ opacity: 0, y: 5, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 5, scale: 0.95 }}
+            transition={{ duration: 0.15 }}
+            className="z-[9999] max-w-xs bg-black/80 text-white p-3 rounded-lg shadow-xl border border-gray-700 backdrop-blur-sm text-sm leading-relaxed"
+          >
+            <div className="font-bold text-amber-400 mb-2 flex items-center gap-2 text-base border-b border-gray-700 pb-1">
+              {data.icon && <span>{data.icon}</span>}
+              {keyword}
+            </div>
+            <div>
+              <ParsedText text={data.description} stats={stats} />
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </span>
+  );
+}
+
+export function ParsedText({ text, stats }: { text: string, stats: any }) {
+  const replaceText = (str: string) => {
+    const regex = /\[([^\]]+)\]/g;
+    const parts = [];
+    let lastIndex = 0;
+    let match;
+    let keyCounter = 0;
+    
+    while ((match = regex.exec(str)) !== null) {
+      if (match.index > lastIndex) {
+        parts.push(str.substring(lastIndex, match.index));
+      }
+      const content = match[1];
+      
+      if (keywordDictionary[content]) {
+        parts.push(<KeywordTooltip key={`kw-${keyCounter++}`} keyword={content} stats={stats} />);
+      } else {
+        const evaluated = evaluateExpression(content, stats);
+        if (evaluated !== content) {
+          parts.push(<span key={`stat-${keyCounter++}`} className="text-emerald-400 font-bold bg-emerald-400/10 px-1 rounded">{evaluated}</span>);
+        } else {
+          parts.push(`[${content}]`);
+        }
+      }
+      lastIndex = regex.lastIndex;
+    }
+    if (lastIndex < str.length) {
+      parts.push(str.substring(lastIndex));
+    }
+    return parts;
+  };
+
+  const options: HTMLReactParserOptions = {
+    replace: (domNode: any) => {
+      if (domNode.type === 'text' && domNode.data) {
+        const parsed = replaceText(domNode.data);
+        if (parsed.length > 1 || parsed[0] !== domNode.data) {
+          return <>{parsed}</>;
+        }
+      }
+    }
+  };
+
+  return <>{parse(text, options)}</>;
+}

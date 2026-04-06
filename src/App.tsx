@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase, isSupabaseConfigured } from './lib/supabase';
 import { Dices, Swords, User, LogOut, Plus, Trash2, Eye, EyeOff, BookOpen, Save, Image as ImageIcon, FileText, Database } from 'lucide-react';
+import { ParsedText } from './components/ParsedText';
 
 // --- Types ---
 type CardType = 'statblock' | 'image' | 'text';
@@ -347,67 +348,6 @@ function SessionLobby({ user, onSelect }: any) {
   );
 }
 
-function MemoSidebar({ cards, sheet }: { cards: CardData[], sheet?: PlayerSheet | null }) {
-  const [memos, setMemos] = useState<{keyword: string, memo: string}[]>([]);
-
-  useEffect(() => {
-    const extractedMemos: {keyword: string, memo: string}[] = [];
-    const parser = new DOMParser();
-
-    const extractFromHtml = (html: string) => {
-      if (!html) return;
-      const doc = parser.parseFromString(html, 'text/html');
-      const nodes = doc.querySelectorAll('.keyword-memo');
-      nodes.forEach(node => {
-        const keyword = node.textContent || '';
-        const memo = node.getAttribute('data-memo') || node.getAttribute('title') || '';
-        if (keyword && memo) {
-          extractedMemos.push({ keyword, memo });
-        }
-      });
-    };
-
-    cards.forEach(card => {
-      if (card.is_revealed) { // 몬스터가 가려지면 메모도 가림
-        extractFromHtml(card.content);
-      }
-    });
-
-    if (sheet) {
-      extractFromHtml(sheet.content);
-    }
-
-    const uniqueMemos = extractedMemos.filter((v, i, a) => a.findIndex(t => (t.keyword === v.keyword && t.memo === v.memo)) === i);
-    setMemos(uniqueMemos);
-  }, [cards, sheet]);
-
-  if (memos.length === 0) return null;
-
-  return (
-    <div className="memo-sidebar" style={{ background: '#111111', borderColor: '#333' }}>
-      <h3 style={{ margin: 0, color: '#fbbf24', borderBottom: '1px solid #333', paddingBottom: '10px', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '1.1em' }}>
-        <BookOpen size={18} />
-        키워드
-      </h3>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '15px' }}>
-        {memos.map((m, idx) => (
-          <div key={idx} style={{
-            background: '#1a1a1a',
-            border: '1px solid #333',
-            padding: '12px',
-            borderRadius: '6px'
-          }}>
-            <div style={{ fontWeight: 'bold', color: '#fbbf24', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span style={{ color: '#ef4444', fontSize: '1.2em' }}>📌</span> {m.keyword}
-            </div>
-            <div style={{ fontSize: '0.9em', color: '#d1d5db', lineHeight: '1.6', whiteSpace: 'pre-wrap' }}>{m.memo}</div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 // --- DM Dashboard ---
 function DMDashboard({ session, user, onBack, openModal }: any) {
   const [cards, setCards] = useState<CardData[]>([]);
@@ -547,7 +487,6 @@ function DMDashboard({ session, user, onBack, openModal }: any) {
         </div>
       )}
       </div>
-      <MemoSidebar cards={cards} />
     </div>
   );
 }
@@ -555,13 +494,12 @@ function DMDashboard({ session, user, onBack, openModal }: any) {
 function DMCard({ card, updateCard, deleteCard, openModal }: any) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [isPreviewMode, setIsPreviewMode] = useState(false);
   const editorRef = useRef<HTMLDivElement>(null);
 
   // 한글 입력(IME) 끊김 방지를 위한 로컬 상태
   const [localTitle, setLocalTitle] = useState(card.title);
   const [localStats, setLocalStats] = useState(card.stats);
-  const [editingMemo, setEditingMemo] = useState<{ id: string, text: string } | null>(null);
-  const [addingMemo, setAddingMemo] = useState<{ id: string, text: string } | null>(null);
 
   useEffect(() => { setLocalTitle(card.title); }, [card.title]);
   useEffect(() => { setLocalStats(card.stats); }, [card.stats]);
@@ -598,89 +536,6 @@ function DMCard({ card, updateCard, deleteCard, openModal }: any) {
 
   const handleStatBlur = () => {
     updateCard(card.id, { stats: localStats });
-  };
-
-  const addKeywordMemo = () => {
-    const selection = window.getSelection();
-    if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
-      alert('메모를 추가할 단어를 드래그해서 선택해주세요.');
-      return;
-    }
-    const tempId = 'memo-' + Date.now();
-    const selectedText = selection.toString();
-    const html = `<span id="${tempId}" class="keyword-memo pending-memo">${selectedText}</span>`;
-    document.execCommand('insertHTML', false, html);
-    
-    setAddingMemo({ id: tempId, text: '' });
-  };
-
-  const saveNewMemo = () => {
-    if (!addingMemo) return;
-    const span = document.getElementById(addingMemo.id);
-    if (span) {
-      if (addingMemo.text.trim() !== '') {
-        span.setAttribute('data-memo', addingMemo.text.replace(/"/g, '&quot;'));
-        span.classList.remove('pending-memo');
-        span.removeAttribute('id');
-      } else {
-        const textNode = document.createTextNode(span.textContent || '');
-        span.parentNode?.replaceChild(textNode, span);
-      }
-      if (editorRef.current) {
-        updateCard(card.id, { content: editorRef.current.innerHTML });
-      }
-    }
-    setAddingMemo(null);
-  };
-
-  const cancelNewMemo = () => {
-    if (!addingMemo) return;
-    const span = document.getElementById(addingMemo.id);
-    if (span) {
-      const textNode = document.createTextNode(span.textContent || '');
-      span.parentNode?.replaceChild(textNode, span);
-      if (editorRef.current) {
-        updateCard(card.id, { content: editorRef.current.innerHTML });
-      }
-    }
-    setAddingMemo(null);
-  };
-
-  const handleEditorClick = (e: React.MouseEvent) => {
-    const target = e.target as HTMLElement;
-    if (target.classList.contains('keyword-memo')) {
-      const currentMemo = target.getAttribute('data-memo') || '';
-      const tempId = 'memo-' + Date.now();
-      target.id = tempId;
-      setEditingMemo({ id: tempId, text: currentMemo });
-    }
-  };
-
-  const saveMemo = (newMemo: string) => {
-    if (!editingMemo) return;
-    const span = document.getElementById(editingMemo.id);
-    if (span) {
-      if (newMemo.trim() === '') {
-        const textNode = document.createTextNode(span.textContent || '');
-        span.parentNode?.replaceChild(textNode, span);
-      } else {
-        span.setAttribute('data-memo', newMemo.replace(/"/g, '&quot;'));
-        span.removeAttribute('id');
-      }
-      if (editorRef.current) {
-        updateCard(card.id, { content: editorRef.current.innerHTML });
-      }
-    }
-    setEditingMemo(null);
-  };
-
-  const cancelEditMemo = () => {
-    if (!editingMemo) return;
-    const span = document.getElementById(editingMemo.id);
-    if (span) {
-      span.removeAttribute('id');
-    }
-    setEditingMemo(null);
   };
 
   return (
@@ -729,52 +584,23 @@ function DMCard({ card, updateCard, deleteCard, openModal }: any) {
                 <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('foreColor', false, '#ef4444')} style={{ color: 'var(--accent-danger)' }}>Red</button>
                 <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('foreColor', false, '#3b82f6')} style={{ color: 'var(--accent-primary)' }}>Blue</button>
                 <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('foreColor', false, '#ffffff')} style={{ color: '#ffffff' }}>White</button>
-                <button onMouseDown={e => { e.preventDefault(); addKeywordMemo(); }} style={{ marginLeft: 'auto', background: 'var(--bg-secondary)', color: 'var(--text-main)' }}>📝 키워드 메모</button>
+                <button onMouseDown={e => e.preventDefault()} onClick={() => setIsPreviewMode(!isPreviewMode)} style={{ marginLeft: 'auto', background: isPreviewMode ? 'var(--accent-primary)' : 'var(--bg-secondary)', color: '#fff' }}>
+                  {isPreviewMode ? '✏️ 편집 모드' : '👁️ 미리보기 (키워드 확인)'}
+                </button>
               </div>
-              <div 
-                ref={editorRef} className="editor" contentEditable suppressContentEditableWarning
-                onBlur={e => updateCard(card.id, { content: e.currentTarget.innerHTML })}
-                onClick={handleEditorClick}
-                dangerouslySetInnerHTML={{ __html: card.content }}
-              />
+              {isPreviewMode ? (
+                <div className="editor-content" style={{ minHeight: '150px' }}>
+                  <ParsedText text={card.content} stats={localStats} />
+                </div>
+              ) : (
+                <div 
+                  ref={editorRef} className="editor" contentEditable suppressContentEditableWarning
+                  onBlur={e => updateCard(card.id, { content: e.currentTarget.innerHTML })}
+                  dangerouslySetInnerHTML={{ __html: card.content }}
+                />
+              )}
             </>
           )}
-        </div>
-      )}
-
-      {editingMemo && (
-        <div className="modal-overlay" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.7)', zIndex: 2000, display: 'flex', justifyContent: 'center', alignItems: 'center' }} onClick={cancelEditMemo}>
-          <div className="card" style={{ width: '90%', maxWidth: '400px' }} onClick={e => e.stopPropagation()}>
-            <h3 style={{ marginTop: 0, color: 'var(--accent-primary)', marginBottom: '15px' }}>메모 수정</h3>
-            <textarea 
-              value={editingMemo.text} 
-              onChange={e => setEditingMemo({ ...editingMemo, text: e.target.value })}
-              style={{ width: '100%', height: '120px', background: 'var(--bg-main)', color: 'var(--text-main)', border: '1px solid var(--border-color)', borderRadius: '6px', padding: '10px', marginBottom: '15px', fontFamily: 'inherit', resize: 'vertical' }}
-            />
-            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
-              <button className="btn btn-danger" onClick={() => saveMemo('')}>메모 삭제</button>
-              <button className="btn" style={{ background: '#4b5563' }} onClick={cancelEditMemo}>취소</button>
-              <button className="btn btn-add" onClick={() => saveMemo(editingMemo.text)}>저장</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {addingMemo && (
-        <div className="modal-overlay" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.7)', zIndex: 2000, display: 'flex', justifyContent: 'center', alignItems: 'center' }} onClick={cancelNewMemo}>
-          <div className="card" style={{ width: '90%', maxWidth: '400px' }} onClick={e => e.stopPropagation()}>
-            <h3 style={{ marginTop: 0, color: 'var(--accent-primary)', marginBottom: '15px' }}>새 메모 추가</h3>
-            <textarea 
-              value={addingMemo.text} 
-              onChange={e => setAddingMemo({ ...addingMemo, text: e.target.value })}
-              placeholder="메모 내용을 입력하세요..."
-              style={{ width: '100%', height: '120px', background: 'var(--bg-main)', color: 'var(--text-main)', border: '1px solid var(--border-color)', borderRadius: '6px', padding: '10px', marginBottom: '15px', fontFamily: 'inherit', resize: 'vertical' }}
-            />
-            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
-              <button className="btn" style={{ background: '#4b5563' }} onClick={cancelNewMemo}>취소</button>
-              <button className="btn btn-add" onClick={saveNewMemo}>추가</button>
-            </div>
-          </div>
         </div>
       )}
     </div>
@@ -787,12 +613,11 @@ function PlayerDashboard({ session, user, onBack, openModal }: any) {
   const [sheet, setSheet] = useState<PlayerSheet | null>(null);
   const [showLoadModal, setShowLoadModal] = useState(false);
   const [savedSheets, setSavedSheets] = useState<any[]>([]);
+  const [isPreviewMode, setIsPreviewMode] = useState(false);
 
   // 한글 입력(IME) 끊김 방지를 위한 로컬 상태
   const [localCharName, setLocalCharName] = useState('');
   const [localStats, setLocalStats] = useState<Stats | null>(null);
-  const [editingMemo, setEditingMemo] = useState<{ id: string, text: string } | null>(null);
-  const [addingMemo, setAddingMemo] = useState<{ id: string, text: string } | null>(null);
   const editorRef = useRef<HTMLDivElement>(null);
 
   const fetchCards = async () => {
@@ -848,108 +673,6 @@ function PlayerDashboard({ session, user, onBack, openModal }: any) {
     return mod >= 0 ? `+${mod}` : mod;
   };
 
-  const addKeywordMemo = () => {
-    const selection = window.getSelection();
-    if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
-      alert('메모를 추가할 단어를 드래그해서 선택해주세요.');
-      return;
-    }
-    const range = selection.getRangeAt(0).cloneRange();
-    
-    // Create a temporary span to mark the selection
-    const tempId = 'temp-memo-' + Date.now();
-    const span = document.createElement('span');
-    span.id = tempId;
-    span.appendChild(range.extractContents());
-    range.insertNode(span);
-    
-    setAddingMemo({ id: tempId, text: '' });
-  };
-
-  const saveNewMemo = () => {
-    if (!addingMemo) return;
-    const span = document.getElementById(addingMemo.id);
-    if (!span) {
-      setAddingMemo(null);
-      return;
-    }
-
-    if (addingMemo.text.trim() !== '') {
-      span.className = 'keyword-memo';
-      span.setAttribute('data-memo', addingMemo.text.replace(/"/g, '&quot;'));
-      span.removeAttribute('id'); // Remove temporary ID
-    } else {
-      // Revert if empty
-      const textNode = document.createTextNode(span.textContent || '');
-      span.parentNode?.replaceChild(textNode, span);
-    }
-    
-    if (editorRef.current) {
-      updateSheet({ content: editorRef.current.innerHTML });
-    }
-    setAddingMemo(null);
-  };
-
-  const cancelNewMemo = () => {
-    if (!addingMemo) return;
-    const span = document.getElementById(addingMemo.id);
-    if (span) {
-      const textNode = document.createTextNode(span.textContent || '');
-      span.parentNode?.replaceChild(textNode, span);
-      if (editorRef.current) {
-        updateSheet({ content: editorRef.current.innerHTML });
-      }
-    }
-    setAddingMemo(null);
-  };
-
-  const handleEditorClick = (e: React.MouseEvent) => {
-    const target = e.target as HTMLElement;
-    if (target.classList.contains('keyword-memo')) {
-      const currentMemo = target.getAttribute('data-memo') || '';
-      // Assign a temporary ID if it doesn't have one
-      if (!target.id) {
-        target.id = 'memo-' + Date.now();
-      }
-      setEditingMemo({ id: target.id, text: currentMemo });
-    }
-  };
-
-  const saveMemo = (newMemo: string) => {
-    if (!editingMemo) return;
-    const span = document.getElementById(editingMemo.id);
-    if (!span) {
-      setEditingMemo(null);
-      return;
-    }
-
-    if (newMemo.trim() === '') {
-      const textNode = document.createTextNode(span.textContent || '');
-      span.parentNode?.replaceChild(textNode, span);
-    } else {
-      span.setAttribute('data-memo', newMemo.replace(/"/g, '&quot;'));
-      // We can remove the ID if we want, but keeping it is fine too.
-      // Let's remove it to keep the HTML clean.
-      if (span.id.startsWith('memo-')) {
-          span.removeAttribute('id');
-      }
-    }
-    
-    if (editorRef.current) {
-      updateSheet({ content: editorRef.current.innerHTML });
-    }
-    setEditingMemo(null);
-  };
-
-  const cancelEditMemo = () => {
-    if (!editingMemo) return;
-    const span = document.getElementById(editingMemo.id);
-    if (span && span.id.startsWith('memo-')) {
-        span.removeAttribute('id');
-    }
-    setEditingMemo(null);
-  };
-
   return (
     <div className="main-layout">
       <div className="dashboard" style={{ flex: 1, minWidth: 0, padding: '20px 0', margin: 0 }}>
@@ -981,7 +704,9 @@ function PlayerDashboard({ session, user, onBack, openModal }: any) {
                     ))}
                   </div>
                 )}
-                <div className="editor-content" dangerouslySetInnerHTML={{ __html: card.content }} />
+                <div className="editor-content">
+                  <ParsedText text={card.content} stats={localStats} />
+                </div>
               </div>
             </div>
           ))}
@@ -1012,55 +737,26 @@ function PlayerDashboard({ session, user, onBack, openModal }: any) {
               <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('foreColor', false, '#ef4444')} style={{ color: 'var(--accent-danger)' }}>Red</button>
               <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('foreColor', false, '#3b82f6')} style={{ color: 'var(--accent-primary)' }}>Blue</button>
               <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('foreColor', false, '#ffffff')} style={{ color: '#ffffff' }}>White</button>
-              <button onMouseDown={e => { e.preventDefault(); addKeywordMemo(); }} style={{ marginLeft: 'auto', background: 'var(--bg-secondary)', color: 'var(--text-main)' }}>📝 키워드 메모</button>
+              <button onMouseDown={e => e.preventDefault()} onClick={() => setIsPreviewMode(!isPreviewMode)} style={{ marginLeft: 'auto', background: isPreviewMode ? 'var(--accent-primary)' : 'var(--bg-secondary)', color: '#fff' }}>
+                {isPreviewMode ? '✏️ 편집 모드' : '👁️ 미리보기 (키워드 확인)'}
+              </button>
             </div>
-            <div 
-              ref={editorRef}
-              className="editor" contentEditable suppressContentEditableWarning
-              onBlur={e => updateSheet({ content: e.currentTarget.innerHTML })}
-              onClick={handleEditorClick}
-              dangerouslySetInnerHTML={{ __html: sheet.content }}
-              style={{ minHeight: '300px' }}
-            />
+            {isPreviewMode ? (
+              <div className="editor-content" style={{ minHeight: '300px' }}>
+                <ParsedText text={sheet.content} stats={localStats} />
+              </div>
+            ) : (
+              <div 
+                ref={editorRef}
+                className="editor" contentEditable suppressContentEditableWarning
+                onBlur={e => updateSheet({ content: e.currentTarget.innerHTML })}
+                dangerouslySetInnerHTML={{ __html: sheet.content }}
+                style={{ minHeight: '300px' }}
+              />
+            )}
           </div>
         )}
       </div>
-
-      {editingMemo && (
-        <div className="modal-overlay" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.7)', zIndex: 2000, display: 'flex', justifyContent: 'center', alignItems: 'center' }} onClick={cancelEditMemo}>
-          <div className="card" style={{ width: '90%', maxWidth: '400px' }} onClick={e => e.stopPropagation()}>
-            <h3 style={{ marginTop: 0, color: 'var(--accent-primary)', marginBottom: '15px' }}>메모 수정</h3>
-            <textarea 
-              value={editingMemo.text} 
-              onChange={e => setEditingMemo({ ...editingMemo, text: e.target.value })}
-              style={{ width: '100%', height: '120px', background: 'var(--bg-main)', color: 'var(--text-main)', border: '1px solid var(--border-color)', borderRadius: '6px', padding: '10px', marginBottom: '15px', fontFamily: 'inherit', resize: 'vertical' }}
-            />
-            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
-              <button className="btn btn-danger" onClick={() => saveMemo('')}>메모 삭제</button>
-              <button className="btn" style={{ background: '#4b5563' }} onClick={cancelEditMemo}>취소</button>
-              <button className="btn btn-add" onClick={() => saveMemo(editingMemo.text)}>저장</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {addingMemo && (
-        <div className="modal-overlay" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.7)', zIndex: 2000, display: 'flex', justifyContent: 'center', alignItems: 'center' }} onClick={cancelNewMemo}>
-          <div className="card" style={{ width: '90%', maxWidth: '400px' }} onClick={e => e.stopPropagation()}>
-            <h3 style={{ marginTop: 0, color: 'var(--accent-primary)', marginBottom: '15px' }}>새 메모 추가</h3>
-            <textarea 
-              value={addingMemo.text} 
-              onChange={e => setAddingMemo({ ...addingMemo, text: e.target.value })}
-              placeholder="메모 내용을 입력하세요..."
-              style={{ width: '100%', height: '120px', background: 'var(--bg-main)', color: 'var(--text-main)', border: '1px solid var(--border-color)', borderRadius: '6px', padding: '10px', marginBottom: '15px', fontFamily: 'inherit', resize: 'vertical' }}
-            />
-            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
-              <button className="btn" style={{ background: '#4b5563' }} onClick={cancelNewMemo}>취소</button>
-              <button className="btn btn-add" onClick={saveNewMemo}>추가</button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {showLoadModal && (
         <div className="modal-overlay" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.7)', zIndex: 1000, display: 'flex', justifyContent: 'center', alignItems: 'center' }} onClick={() => setShowLoadModal(false)}>
@@ -1089,7 +785,6 @@ function PlayerDashboard({ session, user, onBack, openModal }: any) {
         </div>
       )}
       </div>
-      <MemoSidebar cards={cards} sheet={sheet} />
     </div>
   );
 }

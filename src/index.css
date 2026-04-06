@@ -124,59 +124,7 @@ h1, h2, h3, .card-title, .secret-badge {
 #modal-img { max-width: 90%; max-height: 90%; border: 2px solid var(--border-color); box-shadow: 0 0 40px rgba(0,0,0,0.5); border-radius: 12px; }
 #image-modal.show { display: flex; }
 
-/* 키워드 툴팁 (새 기능) */
-.keyword-memo {
-    color: #fbbf24 !important; /* Tailwind amber-400 */
-    text-decoration: underline !important;
-    text-decoration-style: dashed !important;
-    text-underline-offset: 4px;
-    cursor: pointer;
-    font-weight: bold;
-    background-color: transparent !important;
-    border-bottom: none !important;
-}
-.keyword-memo:hover {
-    color: #f59e0b !important; /* Tailwind amber-500 */
-    background-color: rgba(251, 191, 36, 0.1) !important;
-}
-
-/* 사이드 툴팁 패널 */
-.side-tooltip {
-    position: absolute;
-    top: 20px;
-    left: calc(100% + 20px);
-    width: 280px;
-    background: var(--card-bg);
-    border: 1px solid var(--border-color);
-    padding: 20px;
-    border-radius: 12px;
-    box-shadow: 0 10px 30px rgba(0,0,0,0.5);
-    z-index: 100;
-    color: var(--text-main);
-}
-.side-tooltip::before {
-    content: '';
-    position: absolute;
-    top: 20px;
-    left: -12px;
-    border-width: 6px;
-    border-style: solid;
-    border-color: transparent var(--border-color) transparent transparent;
-}
-@media (max-width: 1100px) {
-    .side-tooltip {
-        left: 0;
-        top: calc(100% + 20px);
-        width: 100%;
-    }
-    .side-tooltip::before {
-        top: -12px;
-        left: 20px;
-        border-color: transparent transparent var(--border-color) transparent;
-    }
-}
-
-/* 메인 레이아웃 및 메모 사이드바 */
+/* 메인 레이아웃 */
 .main-layout {
     display: flex;
     gap: 20px;
@@ -185,34 +133,11 @@ h1, h2, h3, .card-title, .secret-badge {
     align-items: flex-start;
     padding: 0 20px;
 }
-.memo-sidebar {
-    width: 280px;
-    background: rgba(30, 41, 59, 0.8);
-    backdrop-filter: blur(10px);
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    padding: 20px;
-    height: calc(100vh - 120px);
-    position: sticky;
-    top: 20px;
-    overflow-y: auto;
-    display: flex;
-    flex-direction: column;
-    gap: 15px;
-    flex-shrink: 0;
-}
 
 @media (max-width: 900px) {
     .main-layout {
         flex-direction: column;
         padding: 0 10px;
-    }
-    .memo-sidebar {
-        width: 100%;
-        height: auto;
-        max-height: 400px;
-        position: static;
-        margin-bottom: 20px;
     }
     .card-container {
         grid-template-columns: 1fr;
