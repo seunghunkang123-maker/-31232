@@ -49,9 +49,6 @@ export const KeywordTooltip: React.FC<{ keywordNode: React.ReactNode, keywordStr
   });
 
   const hover = useHover(context, { 
-    handleClose: safePolygon({
-      buffer: 1,
-    }),
     delay: { open: 150, close: 150 }
   });
   const click = useClick(context);
