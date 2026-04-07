@@ -705,7 +705,8 @@ function DMCard({ card, updateCard, deleteCard, openModal }: any) {
     if (isPreviewMode) return;
     const target = e.target as HTMLElement;
     if (target.classList.contains('keyword-memo')) {
-      const currentMemo = target.getAttribute('data-memo') || '';
+      let currentMemo = target.getAttribute('data-memo') || '';
+      try { currentMemo = decodeURIComponent(currentMemo); } catch (e) {}
       if (!target.id) target.id = 'memo-' + Date.now();
       setEditingMemo({ id: target.id, html: currentMemo });
     }
@@ -719,7 +720,7 @@ function DMCard({ card, updateCard, deleteCard, openModal }: any) {
         const textNode = document.createTextNode(span.textContent || '');
         span.parentNode?.replaceChild(textNode, span);
       } else {
-        span.dataset.memo = html;
+        span.dataset.memo = encodeURIComponent(html);
         span.title = "툴팁 내용: " + html.replace(/<[^>]*>/g, '').substring(0, 50) + "... (미리보기 모드에서 확인 가능)";
         span.removeAttribute('id');
       }
@@ -943,7 +944,8 @@ function PlayerDashboard({ session, user, onBack, openModal }: any) {
     if (isPreviewMode) return;
     const target = e.target as HTMLElement;
     if (target.classList.contains('keyword-memo')) {
-      const currentMemo = target.getAttribute('data-memo') || '';
+      let currentMemo = target.getAttribute('data-memo') || '';
+      try { currentMemo = decodeURIComponent(currentMemo); } catch (e) {}
       if (!target.id) target.id = 'memo-' + Date.now();
       setEditingMemo({ id: target.id, html: currentMemo });
     }
@@ -957,7 +959,7 @@ function PlayerDashboard({ session, user, onBack, openModal }: any) {
         const textNode = document.createTextNode(span.textContent || '');
         span.parentNode?.replaceChild(textNode, span);
       } else {
-        span.dataset.memo = html;
+        span.dataset.memo = encodeURIComponent(html);
         span.title = "툴팁 내용: " + html.replace(/<[^>]*>/g, '').substring(0, 50) + "... (미리보기 모드에서 확인 가능)";
         span.removeAttribute('id');
       }

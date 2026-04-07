@@ -168,12 +168,17 @@ export function ParsedText({ text, stats }: { text: string, stats: any }) {
           const keywordString = getTextContent(domNode);
           const keywordNode = domToReact(domNode.children, options);
           // data-memo 속성을 더 확실하게 가져오기 (소문자, 카멜케이스 모두 대응)
-          const customDesc = attribs['data-memo'] || attribs['datamemo'] || attribs['dataMemo'];
+          let customDesc = attribs['data-memo'] || attribs['datamemo'] || attribs['dataMemo'];
           
           // data-memo가 명시적으로 존재한다면 (빈 문자열 포함) 커스텀 툴팁으로 처리
           const isCustom = 'data-memo' in attribs || 'datamemo' in attribs || 'dataMemo' in attribs;
           
           if (isCustom) {
+            try {
+              if (customDesc) customDesc = decodeURIComponent(customDesc);
+            } catch (e) {
+              // Ignore if not encoded
+            }
             return (
               <KeywordTooltip 
                 key={domNode.attribs.id || Math.random().toString()}
