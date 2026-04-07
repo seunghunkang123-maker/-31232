@@ -124,6 +124,34 @@ h1, h2, h3, .card-title, .secret-badge {
   border-bottom-style: solid;
 }
 
+/* HP Bar Styles */
+.hp-container { margin: 10px 0; }
+.hp-bar-bg { background: #333; height: 12px; border-radius: 6px; overflow: hidden; position: relative; border: 1px solid var(--border-color); }
+.hp-bar-fill { height: 100%; transition: width 0.3s ease, background-color 0.3s ease; }
+.hp-bar-temp { height: 100%; background: #fbbf24; position: absolute; top: 0; opacity: 0.6; }
+.hp-text { display: flex; justify-content: space-between; font-size: 0.85em; font-weight: bold; margin-bottom: 4px; }
+
+/* Timer Styles */
+.timer-panel { background: var(--card-bg); border: 1px solid var(--accent-primary); border-radius: 12px; padding: 15px; margin-bottom: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.3); }
+.timer-item { display: flex; align-items: center; gap: 15px; padding: 10px; background: var(--bg-main); border-radius: 8px; margin-bottom: 8px; border: 1px solid var(--border-color); }
+.timer-time { font-family: monospace; font-size: 1.4em; color: var(--accent-primary); min-width: 80px; }
+.timer-label { flex: 1; font-weight: bold; }
+.timer-expired { color: var(--accent-danger) !important; animation: blink 1s infinite; }
+
+@keyframes blink {
+  0% { opacity: 1; }
+  50% { opacity: 0.4; }
+  100% { opacity: 1; }
+}
+
+/* Reveal Mode Icons */
+.reveal-btn-group { display: flex; gap: 4px; background: var(--bg-main); padding: 4px; border-radius: 8px; border: 1px solid var(--border-color); }
+.reveal-btn { padding: 6px; border-radius: 4px; cursor: pointer; border: none; background: transparent; color: var(--text-muted); transition: 0.2s; display: flex; align-items: center; justify-content: center; }
+.reveal-btn:hover { background: rgba(255,255,255,0.1); }
+.reveal-btn.active { background: var(--accent-primary); color: white; }
+.reveal-btn.active.hidden { background: #4b5563; }
+.reveal-btn.active.full { background: var(--accent-success); }
+
 .image-preview { max-width: 100%; max-height: 300px; border: 1px solid var(--border-color); display: block; margin: 20px auto; object-fit: contain; cursor: zoom-in; border-radius: 8px; }
 
 /* 플레이어 뷰 블러 처리 */

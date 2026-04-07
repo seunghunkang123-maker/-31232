@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase, isSupabaseConfigured } from './lib/supabase';
-import { Dices, Swords, User, LogOut, Plus, Trash2, Eye, EyeOff, BookOpen, Save, Image as ImageIcon, FileText, Database } from 'lucide-react';
+import { Dices, Swords, User, LogOut, Plus, Trash2, Eye, EyeOff, BookOpen, Save, Image as ImageIcon, FileText, Database, Timer, Play, Pause, RotateCcw, X, Minus } from 'lucide-react';
 import { ParsedText } from './components/ParsedText';
 
 // --- Types ---
@@ -8,18 +8,95 @@ type CardType = 'statblock' | 'image' | 'text';
 
 interface Stats { str: number | string; dex: number | string; con: number | string; int: number | string; wis: number | string; cha: number | string; }
 
+type RevealMode = 'hidden' | 'name_only' | 'image_only' | 'full';
+
 interface CardData {
   id: string; session_id: string; type: CardType; title: string; content: string;
-  img_src?: string; is_revealed: boolean; stats: Stats;
+  img_src?: string; is_revealed: boolean; reveal_mode?: RevealMode; stats: Stats;
+  hp?: number; max_hp?: number; temp_hp?: number;
 }
 
-interface SessionData { id: string; name: string; dm_id: string; created_at: string; background_url?: string; }
+interface TimerData {
+  id: string;
+  label: string;
+  duration: number; // remaining seconds
+  end_timestamp: number | null; // Date.now() + remaining
+  is_running: boolean;
+}
+
+interface SessionData { 
+  id: string; name: string; dm_id: string; created_at: string; 
+  background_url?: string; timers?: TimerData[];
+}
 
 interface PlayerSheet {
   id: string; user_id: string; session_id: string; character_name: string; content: string; stats: Stats;
+  hp?: number; max_hp?: number; temp_hp?: number;
 }
 
 interface Initiative { id: string; name: string; score: number; is_active: boolean; }
+
+// --- Helper Components ---
+function HPBar({ current, max, temp = 0, isDM, onUpdate }: { current: number, max: number, temp?: number, isDM: boolean, onUpdate?: (updates: any) => void }) {
+  const percent = Math.min(100, Math.max(0, (current / max) * 100));
+  const tempPercent = Math.min(100, (temp / max) * 100);
+  
+  let color = 'var(--accent-success)';
+  if (percent < 25) color = 'var(--accent-danger)';
+  else if (percent < 50) color = '#f59e0b'; // orange
+
+  const adjust = (val: number) => {
+    if (!onUpdate) return;
+    if (val > 0) {
+      onUpdate({ hp: Math.min(max, current + val) });
+    } else {
+      let damage = Math.abs(val);
+      let newTemp = temp;
+      let newHp = current;
+      
+      if (newTemp > 0) {
+        const absorb = Math.min(newTemp, damage);
+        newTemp -= absorb;
+        damage -= absorb;
+      }
+      
+      if (damage > 0) {
+        newHp = Math.max(0, newHp - damage);
+      }
+      
+      onUpdate({ hp: newHp, temp_hp: newTemp });
+    }
+  };
+
+  return (
+    <div className="hp-container">
+      <div className="hp-text">
+        <span>HP {current}{temp > 0 ? ` (+${temp})` : ''} / {max}</span>
+        <span>{Math.round(percent)}%</span>
+      </div>
+      <div className="hp-bar-bg" style={{ opacity: current <= 0 ? 0.3 : 1 }}>
+        <div className="hp-bar-fill" style={{ width: `${percent}%`, backgroundColor: color }} />
+        {temp > 0 && <div className="hp-bar-temp" style={{ width: `${tempPercent}%`, left: `${percent}%` }} />}
+      </div>
+      {isDM && (
+        <div style={{ display: 'flex', gap: '5px', marginTop: '8px' }}>
+          <button className="btn" style={{ padding: '4px 8px', background: 'var(--accent-danger)' }} onClick={() => adjust(-1)}>-1</button>
+          <button className="btn" style={{ padding: '4px 8px', background: 'var(--accent-danger)' }} onClick={() => adjust(-5)}>-5</button>
+          <button className="btn" style={{ padding: '4px 8px', background: 'var(--accent-success)' }} onClick={() => adjust(1)}>+1</button>
+          <button className="btn" style={{ padding: '4px 8px', background: 'var(--accent-success)' }} onClick={() => adjust(5)}>+5</button>
+          <div style={{ flex: 1 }} />
+          <input 
+            type="number" 
+            placeholder="Max" 
+            value={max} 
+            onChange={e => onUpdate?.({ max_hp: parseInt(e.target.value) || 1 })} 
+            style={{ width: '50px', background: 'var(--bg-main)', border: '1px solid var(--border-color)', color: 'white', borderRadius: '4px', textAlign: 'center', fontSize: '0.8em' }}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
 
 // --- Main Entry ---
 export default function App() {
@@ -71,6 +148,10 @@ CREATE TABLE public.cards (
     content TEXT,
     img_src TEXT,
     is_revealed BOOLEAN DEFAULT FALSE,
+    reveal_mode TEXT DEFAULT 'hidden',
+    hp INTEGER DEFAULT 10,
+    max_hp INTEGER DEFAULT 10,
+    temp_hp INTEGER DEFAULT 0,
     stats JSONB DEFAULT '{"str": 10, "dex": 10, "con": 10, "int": 10, "wis": 10, "cha": 10}'::jsonb,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
@@ -81,6 +162,9 @@ CREATE TABLE public.player_sheets (
     session_id UUID REFERENCES public.sessions(id) ON DELETE CASCADE,
     character_name TEXT DEFAULT '새 캐릭터',
     content TEXT,
+    hp INTEGER DEFAULT 10,
+    max_hp INTEGER DEFAULT 10,
+    temp_hp INTEGER DEFAULT 0,
     stats JSONB DEFAULT '{"str": 10, "dex": 10, "con": 10, "int": 10, "wis": 10, "cha": 10}'::jsonb,
     UNIQUE(user_id, session_id)
 );
@@ -95,6 +179,14 @@ CREATE TABLE public.initiatives (
 );
 
 ALTER TABLE public.sessions ADD COLUMN IF NOT EXISTS background_url TEXT;
+ALTER TABLE public.sessions ADD COLUMN IF NOT EXISTS timers JSONB DEFAULT '[]'::jsonb;
+ALTER TABLE public.cards ADD COLUMN IF NOT EXISTS reveal_mode TEXT DEFAULT 'hidden';
+ALTER TABLE public.cards ADD COLUMN IF NOT EXISTS hp INTEGER DEFAULT 10;
+ALTER TABLE public.cards ADD COLUMN IF NOT EXISTS max_hp INTEGER DEFAULT 10;
+ALTER TABLE public.cards ADD COLUMN IF NOT EXISTS temp_hp INTEGER DEFAULT 0;
+ALTER TABLE public.player_sheets ADD COLUMN IF NOT EXISTS hp INTEGER DEFAULT 10;
+ALTER TABLE public.player_sheets ADD COLUMN IF NOT EXISTS max_hp INTEGER DEFAULT 10;
+ALTER TABLE public.player_sheets ADD COLUMN IF NOT EXISTS temp_hp INTEGER DEFAULT 0;
 ALTER TABLE public.users DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.sessions DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.cards DISABLE ROW LEVEL SECURITY;
@@ -147,6 +239,31 @@ function MainApp() {
     return () => { supabase!.removeChannel(channel); };
   }, [activeSession?.id]);
 
+  // Timer Countdown Logic
+  useEffect(() => {
+    if (!activeSession?.timers || activeSession.timers.length === 0) return;
+    
+    const interval = setInterval(() => {
+      const now = Date.now();
+      let changed = false;
+      const nextTimers = activeSession.timers!.map(t => {
+        if (!t.is_running || !t.end_timestamp) return t;
+        const remaining = Math.max(0, Math.round((t.end_timestamp - now) / 1000));
+        if (remaining !== t.duration) {
+          changed = true;
+          return { ...t, duration: remaining, is_running: remaining > 0 };
+        }
+        return t;
+      });
+
+      if (changed) {
+        setActiveSession({ ...activeSession, timers: nextTimers });
+      }
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [activeSession?.timers]);
+
   if (loading) return <div style={{ color: 'white', textAlign: 'center', marginTop: '50px' }}>로딩 중...</div>;
   if (!user) return <AuthScreen onLogin={setUser} />;
 
@@ -175,7 +292,7 @@ function MainApp() {
       {!activeSession ? (
         <SessionLobby user={user} onSelect={setActiveSession} />
       ) : activeSession.dm_id === user.id ? (
-        <DMDashboard session={activeSession} user={user} onBack={() => setActiveSession(null)} openModal={setModalImg} />
+        <DMDashboard session={activeSession} user={user} onBack={() => setActiveSession(null)} openModal={setModalImg} setActiveSession={setActiveSession} />
       ) : (
         <PlayerDashboard session={activeSession} user={user} onBack={() => setActiveSession(null)} openModal={setModalImg} />
       )}
@@ -349,7 +466,7 @@ function SessionLobby({ user, onSelect }: any) {
 }
 
 // --- DM Dashboard ---
-function DMDashboard({ session, user, onBack, openModal }: any) {
+function DMDashboard({ session, user, onBack, openModal, setActiveSession }: any) {
   const [cards, setCards] = useState<CardData[]>([]);
   const [showLoadModal, setShowLoadModal] = useState(false);
   const [savedMonsters, setSavedMonsters] = useState<any[]>([]);
@@ -390,7 +507,9 @@ function DMDashboard({ session, user, onBack, openModal }: any) {
       title: type === 'statblock' ? '새 몬스터' : type === 'image' ? '새 이미지' : '새 텍스트',
       content: type === 'statblock' ? '<b>방어도</b> 10<br><b>HP</b> 10 (2d8)<br><b>이동 속도</b> 30ft<hr><b>행동</b><br>공격: +2 명중, 1d6 피해.' : '',
       is_revealed: false,
-      stats: { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 }
+      reveal_mode: 'hidden',
+      stats: { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 },
+      hp: 10, max_hp: 10
     };
     await supabase!.from('cards').insert([newCard]);
     fetchCards();
@@ -408,6 +527,11 @@ function DMDashboard({ session, user, onBack, openModal }: any) {
     }
   };
 
+  const updateSession = async (updates: Partial<SessionData>) => {
+    setActiveSession({ ...session, ...updates });
+    await supabase!.from('sessions').update(updates).eq('id', session.id);
+  };
+
   const handleBgUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -417,7 +541,7 @@ function DMDashboard({ session, user, onBack, openModal }: any) {
         const { error } = await supabase!.storage.from('images').upload(fileName, file);
         if (error) throw error;
         const { data: { publicUrl } } = supabase!.storage.from('images').getPublicUrl(fileName);
-        await supabase!.from('sessions').update({ background_url: publicUrl }).eq('id', session.id);
+        updateSession({ background_url: publicUrl });
       } catch (error: any) {
         alert('배경 업로드 실패: ' + error.message);
       }
@@ -425,7 +549,36 @@ function DMDashboard({ session, user, onBack, openModal }: any) {
   };
 
   const handleBgRemove = async () => {
-    await supabase!.from('sessions').update({ background_url: null }).eq('id', session.id);
+    updateSession({ background_url: null });
+  };
+
+  const addTimer = () => {
+    const newTimer: TimerData = {
+      id: 'timer-' + Date.now(),
+      label: '새 타이머',
+      duration: 60,
+      end_timestamp: null,
+      is_running: false
+    };
+    updateSession({ timers: [...(session.timers || []), newTimer] });
+  };
+
+  const updateTimer = (timerId: string, updates: Partial<TimerData>) => {
+    const nextTimers = (session.timers || []).map(t => {
+      if (t.id !== timerId) return t;
+      const updated = { ...t, ...updates };
+      if (updates.is_running === true) {
+        updated.end_timestamp = Date.now() + updated.duration * 1000;
+      } else if (updates.is_running === false) {
+        updated.end_timestamp = null;
+      }
+      return updated;
+    });
+    updateSession({ timers: nextTimers });
+  };
+
+  const deleteTimer = (timerId: string) => {
+    updateSession({ timers: (session.timers || []).filter(t => t.id !== timerId) });
   };
 
   return (
@@ -434,6 +587,7 @@ function DMDashboard({ session, user, onBack, openModal }: any) {
         <div className="header">
         <h2 style={{ margin: 0, color: 'var(--text-main)' }}>현재 세션: <span style={{ color: 'var(--accent-primary)' }}>{session.name}</span> <span style={{fontSize:'0.6em', color:'var(--text-muted)'}}>(마스터)</span></h2>
         <div style={{ display: 'flex', gap: '10px' }}>
+          <button className="btn btn-action" onClick={addTimer}><Timer size={16} style={{verticalAlign:'middle'}}/> 타이머 추가</button>
           <input type="file" id="bg-upload" accept="image/*" style={{ display: 'none' }} onChange={handleBgUpload} />
           <label htmlFor="bg-upload" className="btn btn-action" style={{ cursor: 'pointer', padding: '8px 16px', margin: 0 }}><ImageIcon size={16} style={{verticalAlign:'middle'}}/> 배경 설정</label>
           {session.background_url && <button className="btn btn-danger" onClick={handleBgRemove}>배경 제거</button>}
@@ -441,6 +595,7 @@ function DMDashboard({ session, user, onBack, openModal }: any) {
         </div>
       </div>
 
+      <TimerManager timers={session.timers || []} isDM={true} onUpdate={updateTimer} onDelete={deleteTimer} />
       <InitiativeTracker sessionId={session.id} isDM={true} />
 
       <div className="toolbar" style={{ marginBottom: '20px', justifyContent: 'center', background: 'transparent', border: 'none' }}>
@@ -604,22 +759,27 @@ function DMCard({ card, updateCard, deleteCard, openModal }: any) {
   };
 
   return (
-    <div className={`card ${card.is_revealed ? 'revealed' : ''}`}>
+    <div className={`card ${card.reveal_mode === 'full' ? 'revealed' : ''}`} style={{ opacity: (card.hp !== undefined && card.hp <= 0) ? 0.6 : 1 }}>
       <div className="card-header" onClick={() => setIsExpanded(!isExpanded)} style={{ cursor: 'pointer' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', width: '60%' }} onClick={e => e.stopPropagation()}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', width: '50%' }} onClick={e => e.stopPropagation()}>
           <span style={{ color: 'var(--accent-primary)' }}>{isExpanded ? '▼' : '▶'}</span>
           <input type="text" className="card-title" value={localTitle} onChange={e => setLocalTitle(e.target.value)} onBlur={() => { if (localTitle !== card.title) updateCard(card.id, { title: localTitle }) }} style={{ width: '100%' }} />
         </div>
-        <div onClick={e => e.stopPropagation()}>
-          <button className={`btn btn-reveal ${card.is_revealed ? 'active' : ''}`} onClick={() => updateCard(card.id, { is_revealed: !card.is_revealed })}>
-            {card.is_revealed ? <><Eye size={16} style={{verticalAlign:'middle'}}/> 공개됨</> : <><EyeOff size={16} style={{verticalAlign:'middle'}}/> 숨김</>}
-          </button>
-          <button className="btn btn-danger" style={{ padding: '8px', marginLeft: '5px' }} onClick={() => deleteCard(card.id)}><Trash2 size={16}/></button>
+        <div onClick={e => e.stopPropagation()} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <div className="reveal-btn-group">
+            <button className={`reveal-btn ${card.reveal_mode === 'hidden' ? 'active hidden' : ''}`} onClick={() => updateCard(card.id, { reveal_mode: 'hidden' })} title="완전 비공개"><EyeOff size={14}/></button>
+            <button className={`reveal-btn ${card.reveal_mode === 'name_only' ? 'active' : ''}`} onClick={() => updateCard(card.id, { reveal_mode: 'name_only' })} title="이름만 공개"><User size={14}/></button>
+            <button className={`reveal-btn ${card.reveal_mode === 'image_only' ? 'active' : ''}`} onClick={() => updateCard(card.id, { reveal_mode: 'image_only' })} title="이미지만 공개"><ImageIcon size={14}/></button>
+            <button className={`reveal-btn ${card.reveal_mode === 'full' ? 'active full' : ''}`} onClick={() => updateCard(card.id, { reveal_mode: 'full' })} title="완전 공개"><Eye size={14}/></button>
+          </div>
+          <button className="btn btn-danger" style={{ padding: '8px' }} onClick={() => deleteCard(card.id)}><Trash2 size={16}/></button>
         </div>
       </div>
 
       {isExpanded && (
         <div className="card-body">
+          <HPBar current={card.hp ?? 10} max={card.max_hp ?? 10} temp={card.temp_hp ?? 0} isDM={true} onUpdate={(u) => updateCard(card.id, u)} />
+          
           {(card.type === 'image' || card.type === 'statblock') && (
             <div style={{ marginBottom: '15px' }}>
               <span style={{ fontSize: '0.8em', color: 'var(--text-muted)' }}>이미지 첨부:</span>
@@ -852,44 +1012,60 @@ function PlayerDashboard({ session, user, onBack, openModal }: any) {
         <button className="btn" style={{ background: '#4b5563' }} onClick={onBack}>← 세션 목록으로</button>
       </div>
 
+      <TimerManager timers={session.timers || []} isDM={false} />
       <InitiativeTracker sessionId={session.id} isDM={false} />
 
       <div style={{ display: 'flex', gap: '30px', alignItems: 'flex-start', flexWrap: 'wrap' }}>
         <div className="card-container" style={{ flex: '1 1 500px', display: 'flex', flexDirection: 'column' }}>
           <h3 style={{ width: '100%', color: 'var(--accent-primary)', borderBottom: '1px solid var(--border-color)', paddingBottom: '10px', marginBottom: '20px' }}>공유된 정보</h3>
-          {cards.map((card: CardData) => (
-            <div key={card.id} className={`card player-card ${card.is_revealed ? '' : 'blurred'}`}>
-              <div className="secret-badge">DM SECRET<br/><span style={{ fontSize: '0.5em', color: 'var(--text-main)' }}>마스터가 비공개 중입니다</span></div>
-              <div className="card-header">
-                <div className="card-title">{card.is_revealed ? card.title : '??? (미확인 개체)'}</div>
-              </div>
-              <div className="card-body">
-                {card.img_src && <img src={card.img_src} className="image-preview" onClick={() => openModal(card.img_src)} />}
-                {card.type === 'statblock' && (
-                  <div className="stats-grid">
-                    {(['str', 'dex', 'con', 'int', 'wis', 'cha'] as const).map(stat => (
-                      <div className="stat-box" key={stat}>
-                        <span className="stat-name">{stat.toUpperCase()}</span>
-                        <span className="stat-val">{card.stats[stat]} ({getModifier(card.stats[stat])})</span>
+          {cards.map((card: CardData) => {
+            const mode = card.reveal_mode || (card.is_revealed ? 'full' : 'hidden');
+            if (mode === 'hidden') return null;
+
+            return (
+              <div key={card.id} className={`card player-card ${mode === 'full' ? '' : 'revealed'}`} style={{ opacity: (card.hp !== undefined && card.hp <= 0) ? 0.6 : 1 }}>
+                <div className="card-header">
+                  <div className="card-title">{mode === 'image_only' ? '??? (미확인 개체)' : card.title}</div>
+                </div>
+                <div className="card-body">
+                  {(mode === 'full' || mode === 'image_only') && card.img_src && (
+                    <img src={card.img_src} className="image-preview" onClick={() => openModal(card.img_src)} />
+                  )}
+                  
+                  {mode === 'full' && (
+                    <>
+                      <HPBar current={card.hp ?? 10} max={card.max_hp ?? 10} temp={card.temp_hp ?? 0} isDM={false} />
+                      {card.type === 'statblock' && (
+                        <div className="stats-grid">
+                          {(['str', 'dex', 'con', 'int', 'wis', 'cha'] as const).map(stat => (
+                            <div className="stat-box" key={stat}>
+                              <span className="stat-name">{stat.toUpperCase()}</span>
+                              <span className="stat-val">{card.stats[stat]} ({getModifier(card.stats[stat])})</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      <div className="editor-content">
+                        <ParsedText text={card.content} stats={localStats} />
                       </div>
-                    ))}
-                  </div>
-                )}
-                <div className="editor-content">
-                  <ParsedText text={card.content} stats={localStats} />
+                    </>
+                  )}
+                  {mode === 'name_only' && <p style={{color:'var(--text-muted)', textAlign:'center', padding:'20px'}}>상세 정보가 아직 공개되지 않았습니다.</p>}
                 </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
 
         {sheet && localStats && (
           <div className="card" style={{ flex: '1 1 400px', position: 'sticky', top: '20px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '20px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
               <User color="var(--accent-primary)" />
               <input type="text" value={localCharName} onChange={e => setLocalCharName(e.target.value)} onBlur={() => { if (localCharName !== sheet.character_name) updateSheet({ character_name: localCharName }) }} style={{ background: 'transparent', border: 'none', color: 'var(--accent-primary)', fontSize: '1.3em', fontWeight: 'bold', outline: 'none', width: '100%' }} />
               <button className="btn btn-action" style={{ padding: '6px 12px', fontSize: '0.9em', whiteSpace: 'nowrap' }} onClick={() => { setShowLoadModal(true); fetchSavedSheets(); }}><Database size={14} style={{verticalAlign:'middle'}}/> 불러오기</button>
             </div>
+
+            <HPBar current={sheet.hp ?? 10} max={sheet.max_hp ?? 10} temp={sheet.temp_hp ?? 0} isDM={true} onUpdate={(u) => updateSheet(u)} />
             
             <div className="stats-grid" style={{ marginBottom: '20px' }}>
               {(['str', 'dex', 'con', 'int', 'wis', 'cha'] as const).map(stat => (
@@ -1171,6 +1347,61 @@ function TooltipEditorModal({ initialHtml, onSave, onCancel, onDelete }: { initi
           <button className="btn" style={{ background: '#4b5563' }} onClick={onCancel}>취소</button>
           <button className="btn btn-add" onClick={() => onSave(editorRef.current?.innerHTML || '')}>저장</button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// --- Timer Manager ---
+function TimerManager({ timers, isDM, onUpdate, onDelete }: { timers: TimerData[], isDM: boolean, onUpdate?: (id: string, u: any) => void, onDelete?: (id: string) => void }) {
+  if (timers.length === 0 && !isDM) return null;
+
+  const formatTime = (seconds: number) => {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${m}:${s.toString().padStart(2, '0')}`;
+  };
+
+  return (
+    <div className="timer-panel">
+      <h3 style={{ margin: '0 0 15px 0', color: 'var(--accent-primary)', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '1.1em' }}>
+        <Timer size={18}/> 세션 타이머
+      </h3>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '10px' }}>
+        {timers.map(t => (
+          <div key={t.id} className="timer-item">
+            <div className={`timer-time ${t.duration === 0 ? 'timer-expired' : ''}`}>
+              {formatTime(t.duration)}
+            </div>
+            <div className="timer-label">
+              {isDM ? (
+                <input 
+                  type="text" 
+                  value={t.label} 
+                  onChange={e => onUpdate?.(t.id, { label: e.target.value })} 
+                  style={{ background: 'transparent', border: 'none', color: 'white', fontWeight: 'bold', width: '100%', outline: 'none' }}
+                />
+              ) : (
+                t.label
+              )}
+            </div>
+            {isDM && (
+              <div style={{ display: 'flex', gap: '4px' }}>
+                {t.is_running ? (
+                  <button className="reveal-btn" onClick={() => onUpdate?.(t.id, { is_running: false })}><Pause size={14}/></button>
+                ) : (
+                  <button className="reveal-btn" onClick={() => onUpdate?.(t.id, { is_running: true })} disabled={t.duration === 0}><Play size={14}/></button>
+                )}
+                <button className="reveal-btn" onClick={() => {
+                  const duration = prompt('시간 설정 (초):', t.duration.toString());
+                  if (duration) onUpdate?.(t.id, { duration: parseInt(duration), is_running: false });
+                }}><RotateCcw size={14}/></button>
+                <button className="reveal-btn" style={{ color: 'var(--accent-danger)' }} onClick={() => onDelete?.(t.id)}><X size={14}/></button>
+              </div>
+            )}
+          </div>
+        ))}
+        {timers.length === 0 && isDM && <p style={{ color: 'var(--text-muted)', fontSize: '0.9em', margin: 0 }}>타이머가 없습니다. 상단 버튼으로 추가하세요.</p>}
       </div>
     </div>
   );
