@@ -12,20 +12,13 @@ export type TooltipData = {
 };
 
 export function GlobalTooltip({ data, onMouseEnter, onMouseLeave }: { data: TooltipData | null, onMouseEnter?: () => void, onMouseLeave?: () => void }) {
-  const { refs, floatingStyles } = useFloating({
+  const { refs, x, y, strategy } = useFloating({
+    elements: { reference: data?.el },
     open: !!data,
     placement: 'right',
     whileElementsMounted: autoUpdate,
     middleware: [offset(12), flip(), shift({ padding: 8 })],
   });
-
-  useEffect(() => {
-    if (data?.el) {
-      refs.setReference(data.el);
-    } else {
-      refs.setReference(null);
-    }
-  }, [data, refs]);
 
   return (
     <AnimatePresence>
@@ -36,12 +29,14 @@ export function GlobalTooltip({ data, onMouseEnter, onMouseLeave }: { data: Tool
             onMouseEnter={onMouseEnter}
             onMouseLeave={onMouseLeave}
             style={{
-              ...floatingStyles,
+              position: strategy,
+              top: y ?? 0,
+              left: x ?? 0,
               zIndex: 10000,
             }}
-            initial={{ opacity: 0, y: 10, scale: 0.95 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 10, scale: 0.95 }}
+            initial={{ opacity: 0, x: -10, scale: 0.95 }}
+            animate={{ opacity: 1, x: 0, scale: 1 }}
+            exit={{ opacity: 0, x: -10, scale: 0.95 }}
             transition={{ duration: 0.2, ease: [0.23, 1, 0.32, 1] }}
             className="max-w-sm bg-gray-900/95 text-white p-5 rounded-2xl shadow-[0_20px_60px_-15px_rgba(0,0,0,0.7)] border border-white/10 backdrop-blur-2xl text-sm leading-relaxed ring-1 ring-white/5"
           >
@@ -51,10 +46,6 @@ export function GlobalTooltip({ data, onMouseEnter, onMouseLeave }: { data: Tool
             </div>
             <div className="tooltip-content overflow-y-auto max-h-[300px] custom-scrollbar" style={{ whiteSpace: 'pre-wrap', color: '#d1d5db' }}>
               <ParsedText text={data.content} stats={data.stats} />
-            </div>
-            <div className="mt-3 pt-2 border-t border-white/5 flex justify-between items-center text-[10px] text-gray-500 uppercase tracking-widest font-semibold">
-              <span>{data.type === 'user' ? "User Memo" : "System Entry"}</span>
-              <span className="opacity-50">TRPG Assistant</span>
             </div>
           </motion.div>
         </FloatingPortal>
