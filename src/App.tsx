@@ -2,6 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { supabase, isSupabaseConfigured } from './lib/supabase';
 import { Dices, Swords, User, LogOut, Plus, Trash2, Eye, EyeOff, BookOpen, Save, Image as ImageIcon, FileText, Database, Timer, Play, Pause, RotateCcw, X, Minus } from 'lucide-react';
 import { ParsedText } from './components/ParsedText';
+import { GlobalTooltip, TooltipData } from './components/GlobalTooltip';
+import { keywordDictionary } from './lib/keywordDictionary';
 
 // --- Types ---
 type CardType = 'statblock' | 'image' | 'text';
@@ -651,22 +653,53 @@ function DMCard({ card, updateCard, deleteCard, openModal }: any) {
   const [uploading, setUploading] = useState(false);
   const [isPreviewMode, setIsPreviewMode] = useState(false);
   const [editingMemo, setEditingMemo] = useState<{ id: string, html: string } | null>(null);
-  const [hoveredMemo, setHoveredMemo] = useState<{ html: string, x: number, y: number } | null>(null);
+  const [tooltipData, setTooltipData] = useState<TooltipData | null>(null);
+  const tooltipTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  const clearTooltipTimeout = () => {
+    if (tooltipTimeoutRef.current) {
+      clearTimeout(tooltipTimeoutRef.current);
+      tooltipTimeoutRef.current = null;
+    }
+  };
 
   const handleEditorMouseOver = (e: React.MouseEvent) => {
-    if (isPreviewMode) return;
+    clearTooltipTimeout();
     const target = e.target as HTMLElement;
-    if (target.classList.contains('keyword-memo')) {
-      let memo = target.getAttribute('data-memo') || '';
-      try { memo = decodeURIComponent(memo); } catch (e) {}
-      const rect = target.getBoundingClientRect();
-      setHoveredMemo({ html: memo, x: rect.left + rect.width / 2, y: rect.top });
+    const trigger = target.closest('.keyword-memo') as HTMLElement;
+    if (!trigger) return;
+
+    let content = trigger.getAttribute('data-memo') || '';
+    let isEncoded = trigger.hasAttribute('data-memo');
+    let icon = undefined;
+    let type: 'system' | 'user' = 'user';
+
+    if (!content) {
+      const keyword = trigger.getAttribute('data-keyword') || trigger.textContent || '';
+      const dictData = keywordDictionary[keyword];
+      if (dictData) {
+        content = dictData.description;
+        icon = dictData.icon;
+        type = 'system';
+        isEncoded = false;
+      }
+    }
+
+    if (content) {
+      if (isEncoded) {
+        try { content = decodeURIComponent(content); } catch(err) {}
+      }
+      setTooltipData({ el: trigger, content, stats: localStats, icon, type });
     }
   };
 
   const handleEditorMouseOut = (e: React.MouseEvent) => {
-    if (isPreviewMode) return;
-    setHoveredMemo(null);
+    const target = e.target as HTMLElement;
+    if (target.closest('.keyword-memo')) {
+      tooltipTimeoutRef.current = setTimeout(() => {
+        setTooltipData(null);
+      }, 300);
+    }
   };
   const editorRef = useRef<HTMLDivElement>(null);
 
@@ -738,7 +771,7 @@ function DMCard({ card, updateCard, deleteCard, openModal }: any) {
         span.parentNode?.replaceChild(textNode, span);
       } else {
         span.dataset.memo = encodeURIComponent(html);
-        span.title = "툴팁 내용: " + html.replace(/<[^>]*>/g, '').substring(0, 50) + "... (미리보기 모드에서 확인 가능)";
+        span.removeAttribute('title');
         span.removeAttribute('id');
       }
       if (editorRef.current) {
@@ -854,7 +887,12 @@ function DMCard({ card, updateCard, deleteCard, openModal }: any) {
                 </button>
               </div>
               {isPreviewMode ? (
-                <div className="editor-content" style={{ minHeight: '150px' }}>
+                <div 
+                  className="editor-content" 
+                  style={{ minHeight: '150px' }}
+                  onMouseOver={handleEditorMouseOver}
+                  onMouseOut={handleEditorMouseOut}
+                >
                   <ParsedText text={card.content} stats={localStats} />
                 </div>
               ) : (
@@ -875,27 +913,15 @@ function DMCard({ card, updateCard, deleteCard, openModal }: any) {
           )}
         </div>
       )}
-      {hoveredMemo && (
-        <div 
-          style={{
-            position: 'fixed',
-            left: hoveredMemo.x,
-            top: hoveredMemo.y - 10,
-            transform: 'translate(-50%, -100%)',
-            zIndex: 10000,
-            pointerEvents: 'none'
-          }}
-          className="max-w-sm bg-gray-900/95 text-white p-5 rounded-2xl shadow-[0_20px_60px_-15px_rgba(0,0,0,0.7)] border border-white/10 backdrop-blur-2xl text-sm leading-relaxed ring-1 ring-white/5"
-        >
-          <div className="font-bold text-amber-400 mb-3 flex items-center gap-2 text-base border-b border-white/10 pb-2 flex-wrap">
-            <span className="text-lg">📌</span>
-            <span className="tracking-tight">에디터 미리보기</span>
-          </div>
-          <div className="tooltip-content overflow-y-auto max-h-[300px] custom-scrollbar" style={{ whiteSpace: 'pre-wrap', color: '#d1d5db' }}>
-            <ParsedText text={hoveredMemo.html} stats={localStats} />
-          </div>
-        </div>
-      )}
+      <GlobalTooltip 
+        data={tooltipData} 
+        onMouseEnter={clearTooltipTimeout}
+        onMouseLeave={() => {
+          tooltipTimeoutRef.current = setTimeout(() => {
+            setTooltipData(null);
+          }, 300);
+        }}
+      />
       {editingMemo && (
         <TooltipEditorModal
           initialHtml={editingMemo.html}
@@ -916,22 +942,53 @@ function PlayerDashboard({ session, user, onBack, openModal }: any) {
   const [savedSheets, setSavedSheets] = useState<any[]>([]);
   const [isPreviewMode, setIsPreviewMode] = useState(false);
   const [editingMemo, setEditingMemo] = useState<{ id: string, html: string } | null>(null);
-  const [hoveredMemo, setHoveredMemo] = useState<{ html: string, x: number, y: number } | null>(null);
+  const [tooltipData, setTooltipData] = useState<TooltipData | null>(null);
+  const tooltipTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  const clearTooltipTimeout = () => {
+    if (tooltipTimeoutRef.current) {
+      clearTimeout(tooltipTimeoutRef.current);
+      tooltipTimeoutRef.current = null;
+    }
+  };
 
   const handleEditorMouseOver = (e: React.MouseEvent) => {
-    if (isPreviewMode) return;
+    clearTooltipTimeout();
     const target = e.target as HTMLElement;
-    if (target.classList.contains('keyword-memo')) {
-      let memo = target.getAttribute('data-memo') || '';
-      try { memo = decodeURIComponent(memo); } catch (e) {}
-      const rect = target.getBoundingClientRect();
-      setHoveredMemo({ html: memo, x: rect.left + rect.width / 2, y: rect.top });
+    const trigger = target.closest('.keyword-memo') as HTMLElement;
+    if (!trigger) return;
+
+    let content = trigger.getAttribute('data-memo') || '';
+    let isEncoded = trigger.hasAttribute('data-memo');
+    let icon = undefined;
+    let type: 'system' | 'user' = 'user';
+
+    if (!content) {
+      const keyword = trigger.getAttribute('data-keyword') || trigger.textContent || '';
+      const dictData = keywordDictionary[keyword];
+      if (dictData) {
+        content = dictData.description;
+        icon = dictData.icon;
+        type = 'system';
+        isEncoded = false;
+      }
+    }
+
+    if (content) {
+      if (isEncoded) {
+        try { content = decodeURIComponent(content); } catch(err) {}
+      }
+      setTooltipData({ el: trigger, content, stats: localStats, icon, type });
     }
   };
 
   const handleEditorMouseOut = (e: React.MouseEvent) => {
-    if (isPreviewMode) return;
-    setHoveredMemo(null);
+    const target = e.target as HTMLElement;
+    if (target.closest('.keyword-memo')) {
+      tooltipTimeoutRef.current = setTimeout(() => {
+        setTooltipData(null);
+      }, 300);
+    }
   };
 
   // 한글 입력(IME) 끊김 방지 및 DOM 동기화 문제를 위한 로컬 상태
@@ -1017,7 +1074,7 @@ function PlayerDashboard({ session, user, onBack, openModal }: any) {
         span.parentNode?.replaceChild(textNode, span);
       } else {
         span.dataset.memo = encodeURIComponent(html);
-        span.title = "툴팁 내용: " + html.replace(/<[^>]*>/g, '').substring(0, 50) + "... (미리보기 모드에서 확인 가능)";
+        span.removeAttribute('title');
         span.removeAttribute('id');
       }
       if (editorRef.current) {
@@ -1104,7 +1161,11 @@ function PlayerDashboard({ session, user, onBack, openModal }: any) {
                           ))}
                         </div>
                       )}
-                      <div className="editor-content">
+                      <div 
+                        className="editor-content"
+                        onMouseOver={handleEditorMouseOver}
+                        onMouseOut={handleEditorMouseOut}
+                      >
                         <ParsedText text={card.content} stats={localStats} />
                       </div>
                     </>
@@ -1170,7 +1231,12 @@ function PlayerDashboard({ session, user, onBack, openModal }: any) {
               </button>
             </div>
             {isPreviewMode ? (
-              <div className="editor-content" style={{ minHeight: '300px' }}>
+              <div 
+                className="editor-content" 
+                style={{ minHeight: '300px' }}
+                onMouseOver={handleEditorMouseOver}
+                onMouseOut={handleEditorMouseOut}
+              >
                 <ParsedText text={sheet.content} stats={localStats} />
               </div>
             ) : (
@@ -1193,27 +1259,15 @@ function PlayerDashboard({ session, user, onBack, openModal }: any) {
         )}
       </div>
 
-      {hoveredMemo && (
-        <div 
-          style={{
-            position: 'fixed',
-            left: hoveredMemo.x,
-            top: hoveredMemo.y - 10,
-            transform: 'translate(-50%, -100%)',
-            zIndex: 10000,
-            pointerEvents: 'none'
-          }}
-          className="max-w-sm bg-gray-900/95 text-white p-5 rounded-2xl shadow-[0_20px_60px_-15px_rgba(0,0,0,0.7)] border border-white/10 backdrop-blur-2xl text-sm leading-relaxed ring-1 ring-white/5"
-        >
-          <div className="font-bold text-amber-400 mb-3 flex items-center gap-2 text-base border-b border-white/10 pb-2 flex-wrap">
-            <span className="text-lg">📌</span>
-            <span className="tracking-tight">에디터 미리보기</span>
-          </div>
-          <div className="tooltip-content overflow-y-auto max-h-[300px] custom-scrollbar" style={{ whiteSpace: 'pre-wrap', color: '#d1d5db' }}>
-            <ParsedText text={hoveredMemo.html} stats={localStats} />
-          </div>
-        </div>
-      )}
+      <GlobalTooltip 
+        data={tooltipData} 
+        onMouseEnter={clearTooltipTimeout}
+        onMouseLeave={() => {
+          tooltipTimeoutRef.current = setTimeout(() => {
+            setTooltipData(null);
+          }, 300);
+        }}
+      />
 
       {showLoadModal && (
         <div className="modal-overlay" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.7)', zIndex: 1000, display: 'flex', justifyContent: 'center', alignItems: 'center' }} onClick={() => setShowLoadModal(false)}>
