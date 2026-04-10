@@ -14,7 +14,7 @@ export type TooltipData = {
 export function GlobalTooltip({ data, onMouseEnter, onMouseLeave }: { data: TooltipData | null, onMouseEnter?: () => void, onMouseLeave?: () => void }) {
   const { refs, floatingStyles } = useFloating({
     open: !!data,
-    placement: 'top',
+    placement: 'right',
     whileElementsMounted: autoUpdate,
     middleware: [offset(12), flip(), shift({ padding: 8 })],
   });
