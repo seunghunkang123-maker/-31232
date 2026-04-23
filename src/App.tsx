@@ -510,15 +510,20 @@ function DMDashboard({ session, user, onBack, openModal, setActiveSession }: any
   }, [session.id]);
 
   const addCard = async (type: CardType) => {
-    const newCard = {
+    const newCard: any = {
       session_id: session.id, type,
       title: type === 'statblock' ? '새 몬스터' : type === 'image' ? '새 이미지' : '새 텍스트',
       content: type === 'statblock' ? '<b>방어도</b> 10<br><b>HP</b> 10 (2d8)<br><b>이동 속도</b> 30ft<hr><b>행동</b><br>공격: +2 명중, 1d6 피해.' : '',
       is_revealed: false,
       reveal_mode: 'hidden',
-      stats: { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 },
-      hp: 10, max_hp: 10
+      stats: { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 }
     };
+    
+    if (type === 'statblock') {
+      newCard.hp = 10;
+      newCard.max_hp = 10;
+    }
+
     await supabase!.from('cards').insert([newCard]);
     fetchCards();
   };
@@ -865,10 +870,10 @@ function DMCard({ card, updateCard, deleteCard, openModal }: any) {
     <>
       <div 
         className={`card ${card.reveal_mode !== 'hidden' ? 'revealed' : ''}`} 
-        style={{ opacity: (card.hp !== undefined && card.hp <= 0) ? 0.6 : 1, cursor: 'pointer', display: 'flex', flexDirection: 'column' }}
+        style={{ opacity: (card.type === 'statblock' && card.hp !== undefined && card.hp <= 0) ? 0.6 : 1, cursor: 'pointer', display: 'flex', flexDirection: 'column' }}
         onClick={() => setIsModalOpen(true)}
       >
-        <div className="card-header" style={{ marginBottom: (card.type === 'statblock' || card.hp !== undefined) ? '15px' : '0', paddingBottom: (card.type === 'statblock' || card.hp !== undefined) ? '15px' : '0', borderBottom: (card.type === 'statblock' || card.hp !== undefined) ? '1px solid var(--border-color)' : 'none' }}>
+        <div className="card-header" style={{ marginBottom: (card.type === 'statblock') ? '15px' : '0', paddingBottom: (card.type === 'statblock') ? '15px' : '0', borderBottom: (card.type === 'statblock') ? '1px solid var(--border-color)' : 'none' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1 }}>
             <span style={{ color: 'var(--accent-primary)', fontSize: '1.2em' }}>📄</span>
             <div className="card-title" style={{ fontSize: '1.2em', fontWeight: 'bold' }}>{localTitle || '제목 없음'}</div>
@@ -897,7 +902,7 @@ function DMCard({ card, updateCard, deleteCard, openModal }: any) {
               <img src={card.img_src} alt="" style={{ width: '100%', height: 'auto', borderRadius: '8px', maxHeight: '160px', objectFit: 'cover' }} />
             </div>
           )}
-          {card.hp !== undefined && (
+          {card.type === 'statblock' && card.hp !== undefined && (
             <div style={{ pointerEvents: 'auto' }} onClick={e => e.stopPropagation()}>
               <HPBar current={card.hp ?? 10} max={card.max_hp ?? 10} temp={card.temp_hp ?? 0} isDM={true} onUpdate={(u) => updateCard(card.id, u)} />
             </div>
@@ -971,7 +976,7 @@ function DMCard({ card, updateCard, deleteCard, openModal }: any) {
                     </div>
                   )}
 
-                  {card.reveal_mode === 'full' && card.hp !== undefined && (
+                  {card.reveal_mode === 'full' && card.type === 'statblock' && card.hp !== undefined && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
                       <span style={{ color: 'var(--text-muted)', width: '80px', fontWeight: 'bold' }}>HP 표시:</span>
                       <label style={{ display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer' }}>
@@ -1000,7 +1005,7 @@ function DMCard({ card, updateCard, deleteCard, openModal }: any) {
                 </div>
               </div>
 
-              {card.hp !== undefined && (
+              {card.type === 'statblock' && card.hp !== undefined && (
                 <div style={{ marginBottom: '25px' }}>
                   <HPBar current={card.hp ?? 10} max={card.max_hp ?? 10} temp={card.temp_hp ?? 0} isDM={true} onUpdate={(u) => updateCard(card.id, u)} />
                 </div>
@@ -1152,10 +1157,10 @@ function PlayerCard({ card, openModal, handleEditorMouseOver, handleEditorMouseO
     <>
       <div 
         className={`card player-card ${mode === 'full' ? '' : 'revealed'}`} 
-        style={{ opacity: (card.hp !== undefined && card.hp <= 0) ? 0.6 : 1, cursor: mode === 'name_only' ? 'default' : 'pointer', display: 'flex', flexDirection: 'column' }}
+        style={{ opacity: (card.type === 'statblock' && card.hp !== undefined && card.hp <= 0) ? 0.6 : 1, cursor: mode === 'name_only' ? 'default' : 'pointer', display: 'flex', flexDirection: 'column' }}
         onClick={() => { if (mode !== 'name_only') setIsModalOpen(true); }}
       >
-        <div className="card-header" style={{ marginBottom: (card.type === 'statblock' || card.hp !== undefined) ? '15px' : '0', paddingBottom: (card.type === 'statblock' || card.hp !== undefined) ? '15px' : '0', borderBottom: (card.type === 'statblock' || card.hp !== undefined) ? '1px solid var(--border-color)' : 'none' }}>
+        <div className="card-header" style={{ marginBottom: (card.type === 'statblock') ? '15px' : '0', paddingBottom: (card.type === 'statblock') ? '15px' : '0', borderBottom: (card.type === 'statblock') ? '1px solid var(--border-color)' : 'none' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1 }}>
             <span style={{ color: 'var(--accent-primary)', fontSize: '1.2em' }}>📄</span>
             <div className="card-title" style={{ fontSize: '1.2em', fontWeight: 'bold' }}>{displayName}</div>
@@ -1170,7 +1175,9 @@ function PlayerCard({ card, openModal, handleEditorMouseOver, handleEditorMouseO
           )}
           {mode === 'full' && (
             <>
-              {!cardStats.hide_hp && <HPBar current={card.hp ?? 10} max={card.max_hp ?? 10} temp={card.temp_hp ?? 0} isDM={false} hideNumbers={!!cardStats.hide_hp_text} />}
+              {card.type === 'statblock' && !cardStats.hide_hp && (
+                <HPBar current={card.hp ?? 10} max={card.max_hp ?? 10} temp={card.temp_hp ?? 0} isDM={false} hideNumbers={!!cardStats.hide_hp_text} />
+              )}
               {card.type === 'statblock' && (
                 <div className="stats-grid" style={{ marginBottom: 0, marginTop: '15px' }}>
                   {(['str', 'dex', 'con', 'int', 'wis', 'cha'] as const).map(stat => (
@@ -1209,7 +1216,7 @@ function PlayerCard({ card, openModal, handleEditorMouseOver, handleEditorMouseO
               
               {mode === 'full' && (
                 <>
-                  {!cardStats.hide_hp && (
+                  {card.type === 'statblock' && !cardStats.hide_hp && (
                     <div style={{ marginBottom: '25px' }}>
                       <HPBar current={card.hp ?? 10} max={card.max_hp ?? 10} temp={card.temp_hp ?? 0} isDM={false} hideNumbers={!!cardStats.hide_hp_text} />
                     </div>
