@@ -691,19 +691,19 @@ function DMCard({ card, updateCard, deleteCard, openModal }: any) {
   };
 
   const handleEditorMouseOver = (e: React.MouseEvent) => {
+    const target = e.target as HTMLElement;
+    const trigger = target.closest('.keyword-memo') as HTMLElement;
+    if (!trigger) {
+      handleEditorMouseOut();
+      return;
+    }
     clearTooltipTimeout();
     setTooltipData((prev: TooltipData | null) => {
       if (prev?.isPinned) return prev;
-      
-      const target = e.target as HTMLElement;
-      const trigger = target.closest('.keyword-memo') as HTMLElement;
-      if (!trigger) return null;
-
       let content = trigger.getAttribute('data-memo') || '';
       let isEncoded = trigger.hasAttribute('data-memo');
       let icon = undefined;
       let type: 'system' | 'user' = 'user';
-
       if (!content) {
         const keyword = trigger.getAttribute('data-keyword') || trigger.textContent || '';
         const dictData = keywordDictionary[keyword];
@@ -714,7 +714,6 @@ function DMCard({ card, updateCard, deleteCard, openModal }: any) {
           isEncoded = false;
         }
       }
-
       if (content) {
         if (isEncoded) {
           try { content = decodeURIComponent(content); } catch(err) {}
@@ -725,13 +724,11 @@ function DMCard({ card, updateCard, deleteCard, openModal }: any) {
     });
   };
 
-  const handleEditorMouseOut = (e: React.MouseEvent) => {
-    const target = e.target as HTMLElement;
-    if (target.closest('.keyword-memo')) {
-      tooltipTimeoutRef.current = setTimeout(() => {
-        setTooltipData(prev => (prev?.isPinned ? prev : null));
-      }, 300);
-    }
+  const handleEditorMouseOut = () => {
+    clearTooltipTimeout();
+    tooltipTimeoutRef.current = setTimeout(() => {
+      setTooltipData(prev => (prev?.isPinned ? prev : null));
+    }, 400);
   };
   const editorRef = useRef<HTMLDivElement>(null);
 
@@ -803,16 +800,31 @@ function DMCard({ card, updateCard, deleteCard, openModal }: any) {
     
     if (trigger) {
       setTooltipData(prev => {
+        // Toggle pin if clicking the same trigger
         if (prev && prev.el === trigger) return { ...prev, isPinned: !prev.isPinned };
         
         let memo = trigger.getAttribute('data-memo') || '';
         try { memo = decodeURIComponent(memo); } catch (ex) {}
         
+        let icon = undefined;
+        let type: 'system' | 'user' = 'user';
+        
+        if (!memo) {
+          const keyword = trigger.getAttribute('data-keyword') || trigger.textContent || '';
+          const dictData = keywordDictionary[keyword];
+          if (dictData) {
+            memo = dictData.description;
+            icon = dictData.icon;
+            type = 'system';
+          }
+        }
+
         return {
           el: trigger,
           content: memo,
           stats: localStats,
-          type: 'user',
+          icon,
+          type,
           isPinned: true
         };
       });
@@ -1085,6 +1097,7 @@ function DMCard({ card, updateCard, deleteCard, openModal }: any) {
                         style={{ minHeight: '200px', border: 'none', padding: 0, background: 'transparent' }}
                         onMouseOver={handleEditorMouseOver}
                         onMouseOut={handleEditorMouseOut}
+                        onClick={handleEditorClick}
                       >
                         <ParsedText text={card.content} stats={localStats} />
                       </div>
@@ -1115,7 +1128,7 @@ function DMCard({ card, updateCard, deleteCard, openModal }: any) {
             onMouseLeave={() => {
               tooltipTimeoutRef.current = setTimeout(() => {
                 setTooltipData(prev => (prev?.isPinned ? prev : null));
-              }, 300);
+              }, 400);
             }}
             onClose={() => setTooltipData(null)}
             onPinToggle={() => setTooltipData(prev => prev ? { ...prev, isPinned: !prev.isPinned } : null)}
@@ -1250,11 +1263,25 @@ function PlayerCard({ card, openModal, handleEditorMouseOver, handleEditorMouseO
                             let memo = trigger.getAttribute('data-memo') || '';
                             try { memo = decodeURIComponent(memo); } catch (ex) {}
                             
+                            let icon = undefined;
+                            let type: 'system' | 'user' = 'user';
+                            
+                            if (!memo) {
+                              const keyword = trigger.getAttribute('data-keyword') || trigger.textContent || '';
+                              const dictData = keywordDictionary[keyword];
+                              if (dictData) {
+                                memo = dictData.description;
+                                icon = dictData.icon;
+                                type = 'system';
+                              }
+                            }
+
                             return {
                               el: trigger,
                               content: memo,
                               stats: cardStats,
-                              type: 'user',
+                              icon,
+                              type,
                               isPinned: true
                             };
                           });
@@ -1294,19 +1321,19 @@ function PlayerDashboard({ session, user, onBack, openModal }: any) {
   };
 
   const handleEditorMouseOver = (e: React.MouseEvent) => {
+    const target = e.target as HTMLElement;
+    const trigger = target.closest('.keyword-memo') as HTMLElement;
+    if (!trigger) {
+      handleEditorMouseOut();
+      return;
+    }
     clearTooltipTimeout();
     setTooltipData((prev: TooltipData | null) => {
       if (prev?.isPinned) return prev;
-      
-      const target = e.target as HTMLElement;
-      const trigger = target.closest('.keyword-memo') as HTMLElement;
-      if (!trigger) return null;
-
       let content = trigger.getAttribute('data-memo') || '';
       let isEncoded = trigger.hasAttribute('data-memo');
       let icon = undefined;
       let type: 'system' | 'user' = 'user';
-
       if (!content) {
         const keyword = trigger.getAttribute('data-keyword') || trigger.textContent || '';
         const dictData = keywordDictionary[keyword];
@@ -1317,7 +1344,6 @@ function PlayerDashboard({ session, user, onBack, openModal }: any) {
           isEncoded = false;
         }
       }
-
       if (content) {
         if (isEncoded) {
           try { content = decodeURIComponent(content); } catch(err) {}
@@ -1328,13 +1354,11 @@ function PlayerDashboard({ session, user, onBack, openModal }: any) {
     });
   };
 
-  const handleEditorMouseOut = (e: React.MouseEvent) => {
-    const target = e.target as HTMLElement;
-    if (target.closest('.keyword-memo')) {
-      tooltipTimeoutRef.current = setTimeout(() => {
-        setTooltipData(prev => (prev?.isPinned ? prev : null));
-      }, 300);
-    }
+  const handleEditorMouseOut = () => {
+    clearTooltipTimeout();
+    tooltipTimeoutRef.current = setTimeout(() => {
+      setTooltipData(prev => (prev?.isPinned ? prev : null));
+    }, 400);
   };
 
   // 한글 입력(IME) 끊김 방지 및 DOM 동기화 문제를 위한 로컬 상태
@@ -1405,16 +1429,31 @@ function PlayerDashboard({ session, user, onBack, openModal }: any) {
     
     if (trigger) {
       setTooltipData(prev => {
+        // Toggle pin if clicking the same trigger
         if (prev && prev.el === trigger) return { ...prev, isPinned: !prev.isPinned };
         
         let memo = trigger.getAttribute('data-memo') || '';
         try { memo = decodeURIComponent(memo); } catch (ex) {}
         
+        let icon = undefined;
+        let type: 'system' | 'user' = 'user';
+        
+        if (!memo) {
+          const keyword = trigger.getAttribute('data-keyword') || trigger.textContent || '';
+          const dictData = keywordDictionary[keyword];
+          if (dictData) {
+            memo = dictData.description;
+            icon = dictData.icon;
+            type = 'system';
+          }
+        }
+
         return {
           el: trigger,
           content: memo,
-          stats: sheet?.stats || { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 },
-          type: 'user',
+          stats: localStats || { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 },
+          icon,
+          type,
           isPinned: true
         };
       });
@@ -1561,6 +1600,7 @@ function PlayerDashboard({ session, user, onBack, openModal }: any) {
                 style={{ minHeight: '300px' }}
                 onMouseOver={handleEditorMouseOver}
                 onMouseOut={handleEditorMouseOut}
+                onClick={handleEditorClick}
               >
                 <ParsedText text={sheet.content} stats={localStats} />
               </div>
@@ -1590,7 +1630,7 @@ function PlayerDashboard({ session, user, onBack, openModal }: any) {
         onMouseLeave={() => {
           tooltipTimeoutRef.current = setTimeout(() => {
             setTooltipData(prev => (prev?.isPinned ? prev : null));
-          }, 300);
+          }, 400);
         }}
         onClose={() => setTooltipData(null)}
         onPinToggle={() => setTooltipData(prev => prev ? { ...prev, isPinned: !prev.isPinned } : null)}

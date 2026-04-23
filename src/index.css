@@ -112,15 +112,19 @@ h1, h2, h3, .card-title, .secret-badge {
 .editor:focus { border-color: var(--accent-primary); box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2); }
 
 .keyword-memo {
-  border-bottom: 1px dashed var(--accent-primary);
+  border-bottom: 2px dotted #2563eb;
   cursor: pointer;
-  color: var(--accent-primary);
-  font-weight: 500;
+  color: #2563eb;
+  font-weight: 600;
   transition: all 0.2s ease;
+  padding: 0 2px;
+  border-radius: 2px;
+  background-color: rgba(37, 99, 235, 0.05);
 }
 
 .keyword-memo:hover {
-  background-color: rgba(59, 130, 246, 0.1);
+  background-color: rgba(37, 99, 235, 0.15);
+  color: #1d4ed8;
   border-bottom-style: solid;
 }
 

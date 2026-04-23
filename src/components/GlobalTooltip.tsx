@@ -14,14 +14,17 @@ export type TooltipData = {
 };
 
 export function GlobalTooltip({ data, onMouseEnter, onMouseLeave, onClose, onPinToggle, onEdit, isEditable }: { data: TooltipData | null, onMouseEnter?: () => void, onMouseLeave?: () => void, onClose?: () => void, onPinToggle?: () => void, onEdit?: () => void, isEditable?: boolean }) {
-  // Handle click outside to close on mobile
+  // Handle click outside
   useEffect(() => {
     if (!data || !onClose) return;
     
-    const handleTouchOutside = (e: TouchEvent | MouseEvent) => {
+    const handleOutsideAction = (e: TouchEvent | MouseEvent) => {
+      // If pinned, only the X button or an explicit onClose call should close it
+      if (data.isPinned) return;
+
       const target = e.target as Node;
-      // If click is outside the tooltip and outside the reference element
       const tooltipEl = document.getElementById('global-tooltip-panel');
+      
       if (
         tooltipEl && 
         !tooltipEl.contains(target) &&
@@ -33,12 +36,12 @@ export function GlobalTooltip({ data, onMouseEnter, onMouseLeave, onClose, onPin
       }
     };
 
-    document.addEventListener('touchstart', handleTouchOutside);
-    document.addEventListener('mousedown', handleTouchOutside);
+    document.addEventListener('touchstart', handleOutsideAction);
+    document.addEventListener('mousedown', handleOutsideAction);
     
     return () => {
-      document.removeEventListener('touchstart', handleTouchOutside);
-      document.removeEventListener('mousedown', handleTouchOutside);
+      document.removeEventListener('touchstart', handleOutsideAction);
+      document.removeEventListener('mousedown', handleOutsideAction);
     };
   }, [data, onClose]);
 
