@@ -147,9 +147,9 @@ h1, h2, h3, .card-title, .secret-badge {
 /* Reveal Mode Icons */
 .reveal-btn-group { display: flex; gap: 4px; background: var(--bg-main); padding: 4px; border-radius: 8px; border: 1px solid var(--border-color); }
 .reveal-btn { padding: 6px; border-radius: 4px; cursor: pointer; border: none; background: transparent; color: var(--text-muted); transition: 0.2s; display: flex; align-items: center; justify-content: center; }
-.reveal-btn:hover { background: rgba(255,255,255,0.1); }
+.reveal-btn:hover { background: rgba(0,0,0,0.05); }
 .reveal-btn.active { background: var(--accent-primary); color: white; }
-.reveal-btn.active.hidden { background: #4b5563; }
+.reveal-btn.active.hidden { background: var(--border-color); color: var(--text-main); }
 .reveal-btn.active.full { background: var(--accent-success); }
 
 .image-preview { max-width: 100%; max-height: 300px; border: 1px solid var(--border-color); display: block; margin: 20px auto; object-fit: contain; cursor: zoom-in; border-radius: 8px; }

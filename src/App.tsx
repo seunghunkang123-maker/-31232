@@ -824,8 +824,13 @@ function DMCard({ card, updateCard, deleteCard, openModal }: any) {
         </div>
         <div onClick={e => e.stopPropagation()} style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <button 
-            className={`btn ${card.reveal_mode === 'hidden' ? '' : 'btn-success'}`} 
-            style={{ padding: '6px 12px', display: 'flex', alignItems: 'center', gap: '6px', background: card.reveal_mode === 'hidden' ? 'var(--bg-main)' : 'var(--accent-success)' }}
+            className={`btn`} 
+            style={{ 
+              padding: '6px 12px', display: 'flex', alignItems: 'center', gap: '6px', 
+              background: card.reveal_mode === 'hidden' ? 'var(--bg-main)' : 'var(--accent-success)',
+              color: card.reveal_mode === 'hidden' ? 'var(--text-main)' : '#fff',
+              border: card.reveal_mode === 'hidden' ? '1px solid var(--border-color)' : '1px solid var(--accent-success)'
+            }}
             onClick={() => updateCard(card.id, { reveal_mode: card.reveal_mode === 'hidden' ? 'full' : 'hidden' })}
           >
             {card.reveal_mode === 'hidden' ? <><EyeOff size={14}/> 비공개</> : <><Eye size={14}/> 플레이어에게 공개됨</>}
@@ -918,7 +923,7 @@ function DMCard({ card, updateCard, deleteCard, openModal }: any) {
                 <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('underline')}><u>U</u></button>
                 <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('foreColor', false, '#ef4444')} style={{ color: 'var(--accent-danger)' }}>Red</button>
                 <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('foreColor', false, '#3b82f6')} style={{ color: 'var(--accent-primary)' }}>Blue</button>
-                <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('foreColor', false, '#ffffff')} style={{ color: '#ffffff' }}>White</button>
+                <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('foreColor', false, '#000000')} style={{ color: '#000000', fontWeight: 'bold' }}>Black</button>
                 <button onMouseDown={e => {
                   e.preventDefault();
                   const selection = window.getSelection();
@@ -941,7 +946,7 @@ function DMCard({ card, updateCard, deleteCard, openModal }: any) {
                     }
                   }
                 }} style={{ background: 'var(--bg-secondary)', color: 'var(--text-main)' }}>📝 툴팁 추가</button>
-                <button onMouseDown={e => e.preventDefault()} onClick={() => setIsPreviewMode(!isPreviewMode)} style={{ marginLeft: 'auto', background: isPreviewMode ? 'var(--accent-primary)' : 'var(--bg-secondary)', color: '#fff' }}>
+                <button onMouseDown={e => e.preventDefault()} onClick={() => setIsPreviewMode(!isPreviewMode)} style={{ marginLeft: 'auto', background: isPreviewMode ? 'var(--accent-primary)' : 'var(--bg-main)', color: isPreviewMode ? '#fff' : 'var(--text-main)', border: '1px solid var(--border-color)' }}>
                   {isPreviewMode ? '✏️ 편집 모드' : '👁️ 미리보기 (키워드 확인)'}
                 </button>
               </div>
@@ -1263,7 +1268,7 @@ function PlayerDashboard({ session, user, onBack, openModal }: any) {
               <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('underline')}><u>U</u></button>
               <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('foreColor', false, '#ef4444')} style={{ color: 'var(--accent-danger)' }}>Red</button>
               <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('foreColor', false, '#3b82f6')} style={{ color: 'var(--accent-primary)' }}>Blue</button>
-              <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('foreColor', false, '#ffffff')} style={{ color: '#ffffff' }}>White</button>
+              <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('foreColor', false, '#000000')} style={{ color: '#000000', fontWeight: 'bold' }}>Black</button>
               <button onMouseDown={e => {
                 e.preventDefault();
                 const selection = window.getSelection();
@@ -1286,7 +1291,7 @@ function PlayerDashboard({ session, user, onBack, openModal }: any) {
                   }
                 }
               }} style={{ background: 'var(--bg-secondary)', color: 'var(--text-main)' }}>📝 툴팁 추가</button>
-              <button onMouseDown={e => e.preventDefault()} onClick={() => setIsPreviewMode(!isPreviewMode)} style={{ marginLeft: 'auto', background: isPreviewMode ? 'var(--accent-primary)' : 'var(--bg-secondary)', color: '#fff' }}>
+              <button onMouseDown={e => e.preventDefault()} onClick={() => setIsPreviewMode(!isPreviewMode)} style={{ marginLeft: 'auto', background: isPreviewMode ? 'var(--accent-primary)' : 'var(--bg-main)', color: isPreviewMode ? '#fff' : 'var(--text-main)', border: '1px solid var(--border-color)' }}>
                 {isPreviewMode ? '✏️ 편집 모드' : '👁️ 미리보기 (키워드 확인)'}
               </button>
             </div>
@@ -1522,7 +1527,7 @@ function TooltipEditorModal({ initialHtml, onSave, onCancel, onDelete }: { initi
           <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('foreColor', false, '#3b82f6')} style={{ color: '#3b82f6' }} title="파랑">●</button>
           <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('foreColor', false, '#10b981')} style={{ color: '#10b981' }} title="초록">●</button>
           <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('foreColor', false, '#f59e0b')} style={{ color: '#f59e0b' }} title="노랑">●</button>
-          <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('foreColor', false, '#ffffff')} style={{ color: '#ffffff' }} title="흰색">○</button>
+          <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('foreColor', false, '#000000')} style={{ color: '#000000', fontWeight: 'bold' }} title="검은색">○</button>
           <div style={{ width: '1px', height: '20px', background: 'var(--border-color)', margin: '0 5px' }} />
           <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('insertUnorderedList')} title="글머리 기호">List</button>
         </div>
