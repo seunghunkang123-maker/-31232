@@ -654,6 +654,13 @@ function DMDashboard({ session, user, onBack, openModal, setActiveSession }: any
   );
 }
 
+const getModifier = (score: number | string) => {
+  const num = parseInt(score as string, 10);
+  if (isNaN(num)) return score;
+  let mod = Math.floor((num - 10) / 2);
+  return mod >= 0 ? `+${mod}` : mod;
+};
+
 function DMCard({ card, updateCard, deleteCard, openModal }: any) {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -716,11 +723,13 @@ function DMCard({ card, updateCard, deleteCard, openModal }: any) {
 
   // 한글 입력(IME) 끊김 방지 및 DOM 동기화 문제를 위한 로컬 상태
   const [localTitle, setLocalTitle] = useState(card.title);
-  const [localStats, setLocalStats] = useState(card.stats);
+  const [localStats, setLocalStats] = useState(card.stats || { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 });
   const [localContent, setLocalContent] = useState(card.content);
 
   useEffect(() => { setLocalTitle(card.title); }, [card.title]);
-  useEffect(() => { setLocalStats(card.stats); }, [card.stats]);
+  useEffect(() => { 
+    if (card.stats) setLocalStats(card.stats);
+  }, [card.stats]);
   useEffect(() => { 
     // 에디터가 포커스 중이 아닐 때만 외부 변경사항 반영
     if (document.activeElement !== editorRef.current) {
@@ -873,7 +882,7 @@ function DMCard({ card, updateCard, deleteCard, openModal }: any) {
               {(['str', 'dex', 'con', 'int', 'wis', 'cha'] as const).map(stat => (
                 <div className="stat-box" key={stat}>
                   <span className="stat-name">{stat.toUpperCase()}</span>
-                  <span className="stat-val" style={{ fontSize: '1.1em' }}>{card.stats[stat]} <span style={{ fontSize: '0.8em', color: 'var(--text-muted)' }}>({getModifier(card.stats[stat])})</span></span>
+                  <span className="stat-val" style={{ fontSize: '1.1em' }}>{localStats[stat]} <span style={{ fontSize: '0.8em', color: 'var(--text-muted)' }}>({getModifier(localStats[stat])})</span></span>
                 </div>
               ))}
             </div>
@@ -917,13 +926,13 @@ function DMCard({ card, updateCard, deleteCard, openModal }: any) {
                     <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
                       <span style={{ color: 'var(--text-muted)', width: '80px', fontWeight: 'bold' }}>이름 표시:</span>
                       <label style={{ display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer' }}>
-                        <input type="radio" checked={!card.stats?.hide_name} onChange={() => updateCard(card.id, { stats: { ...card.stats, hide_name: false }})} /> 진짜 이름
+                        <input type="radio" checked={!localStats.hide_name} onChange={() => updateCard(card.id, { stats: { ...localStats, hide_name: false }})} /> 진짜 이름
                       </label>
                       <label style={{ display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer' }}>
-                        <input type="radio" checked={card.stats?.hide_name} onChange={() => updateCard(card.id, { stats: { ...card.stats, hide_name: true }})} /> 가명 사용
+                        <input type="radio" checked={localStats.hide_name} onChange={() => updateCard(card.id, { stats: { ...localStats, hide_name: true }})} /> 가명 사용
                       </label>
-                      {card.stats?.hide_name && (
-                        <input type="text" value={card.stats?.alt_name || ''} onChange={e => updateCard(card.id, { stats: {...card.stats, alt_name: e.target.value }})} placeholder="??? (미확인 개체)" style={{ padding: '4px 8px', background: 'var(--bg-main)', border: '1px solid var(--border-color)', color: 'var(--text-main)', borderRadius: '4px', width: '140px' }} />
+                      {localStats.hide_name && (
+                        <input type="text" value={localStats.alt_name || ''} onChange={e => updateCard(card.id, { stats: {...localStats, alt_name: e.target.value }})} placeholder="??? (미확인 개체)" style={{ padding: '4px 8px', background: 'var(--bg-main)', border: '1px solid var(--border-color)', color: 'var(--text-main)', borderRadius: '4px', width: '140px' }} />
                       )}
                     </div>
                   )}
@@ -932,13 +941,13 @@ function DMCard({ card, updateCard, deleteCard, openModal }: any) {
                     <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
                       <span style={{ color: 'var(--text-muted)', width: '80px', fontWeight: 'bold' }}>HP 표시:</span>
                       <label style={{ display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer' }}>
-                        <input type="radio" checked={!card.stats?.hide_hp && !card.stats?.hide_hp_text} onChange={() => updateCard(card.id, { stats: { ...card.stats, hide_hp: false, hide_hp_text: false }})} /> 수치+바(Bar)
+                        <input type="radio" checked={!localStats.hide_hp && !localStats.hide_hp_text} onChange={() => updateCard(card.id, { stats: { ...localStats, hide_hp: false, hide_hp_text: false }})} /> 수치+바(Bar)
                       </label>
                       <label style={{ display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer' }}>
-                        <input type="radio" checked={!card.stats?.hide_hp && card.stats?.hide_hp_text} onChange={() => updateCard(card.id, { stats: { ...card.stats, hide_hp: false, hide_hp_text: true }})} /> 바(Bar)만
+                        <input type="radio" checked={!localStats.hide_hp && localStats.hide_hp_text} onChange={() => updateCard(card.id, { stats: { ...localStats, hide_hp: false, hide_hp_text: true }})} /> 바(Bar)만
                       </label>
                       <label style={{ display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer' }}>
-                        <input type="radio" checked={card.stats?.hide_hp} onChange={() => updateCard(card.id, { stats: { ...card.stats, hide_hp: true, hide_hp_text: false }})} /> 숨김
+                        <input type="radio" checked={localStats.hide_hp} onChange={() => updateCard(card.id, { stats: { ...localStats, hide_hp: true, hide_hp_text: false }})} /> 숨김
                       </label>
                     </div>
                   )}
@@ -947,10 +956,10 @@ function DMCard({ card, updateCard, deleteCard, openModal }: any) {
                     <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
                       <span style={{ color: 'var(--text-muted)', width: '80px', fontWeight: 'bold' }}>스탯 표시:</span>
                       <label style={{ display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer' }}>
-                        <input type="radio" checked={!card.stats?.hide_stats} onChange={() => updateCard(card.id, { stats: { ...card.stats, hide_stats: false }})} /> 공개
+                        <input type="radio" checked={!localStats.hide_stats} onChange={() => updateCard(card.id, { stats: { ...localStats, hide_stats: false }})} /> 공개
                       </label>
                       <label style={{ display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer' }}>
-                        <input type="radio" checked={card.stats?.hide_stats} onChange={() => updateCard(card.id, { stats: { ...card.stats, hide_stats: true }})} /> 숨김 (???)
+                        <input type="radio" checked={localStats.hide_stats} onChange={() => updateCard(card.id, { stats: { ...localStats, hide_stats: true }})} /> 숨김 (???)
                       </label>
                     </div>
                   )}
@@ -1099,10 +1108,11 @@ function DMCard({ card, updateCard, deleteCard, openModal }: any) {
 function PlayerCard({ card, openModal, handleEditorMouseOver, handleEditorMouseOut, setTooltipData }: any) {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const mode = card.reveal_mode || (card.is_revealed ? 'full' : 'hidden');
+  const cardStats = card.stats || { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 };
   
   if (mode === 'hidden') return null;
 
-  const displayName = (mode === 'image_only' || card.stats?.hide_name) ? (card.stats?.alt_name || '??? (미확인 개체)') : card.title;
+  const displayName = (mode === 'image_only' || cardStats.hide_name) ? (cardStats.alt_name || '??? (미확인 개체)') : card.title;
 
   return (
     <>
@@ -1121,14 +1131,14 @@ function PlayerCard({ card, openModal, handleEditorMouseOver, handleEditorMouseO
         <div className="card-body" style={{ pointerEvents: 'none' }}>
           {mode === 'full' && (
             <>
-              {!card.stats?.hide_hp && <HPBar current={card.hp ?? 10} max={card.max_hp ?? 10} temp={card.temp_hp ?? 0} isDM={false} hideNumbers={!!card.stats?.hide_hp_text} />}
+              {!cardStats.hide_hp && <HPBar current={card.hp ?? 10} max={card.max_hp ?? 10} temp={card.temp_hp ?? 0} isDM={false} hideNumbers={!!cardStats.hide_hp_text} />}
               {card.type === 'statblock' && (
                 <div className="stats-grid" style={{ marginBottom: 0, marginTop: '15px' }}>
                   {(['str', 'dex', 'con', 'int', 'wis', 'cha'] as const).map(stat => (
                     <div className="stat-box" key={stat}>
                       <span className="stat-name">{stat.toUpperCase()}</span>
                       <span className="stat-val" style={{ fontSize: '1.1em' }}>
-                        {card.stats?.hide_stats ? '???' : `${card.stats[stat]} (${getModifier(card.stats[stat])})`}
+                        {cardStats.hide_stats ? '???' : `${cardStats[stat]} (${getModifier(cardStats[stat])})`}
                       </span>
                     </div>
                   ))}
@@ -1160,9 +1170,9 @@ function PlayerCard({ card, openModal, handleEditorMouseOver, handleEditorMouseO
               
               {mode === 'full' && (
                 <>
-                  {!card.stats?.hide_hp && (
+                  {!cardStats.hide_hp && (
                     <div style={{ marginBottom: '25px' }}>
-                      <HPBar current={card.hp ?? 10} max={card.max_hp ?? 10} temp={card.temp_hp ?? 0} isDM={false} hideNumbers={!!card.stats?.hide_hp_text} />
+                      <HPBar current={card.hp ?? 10} max={card.max_hp ?? 10} temp={card.temp_hp ?? 0} isDM={false} hideNumbers={!!cardStats.hide_hp_text} />
                     </div>
                   )}
                   {card.type === 'statblock' && (
@@ -1171,9 +1181,9 @@ function PlayerCard({ card, openModal, handleEditorMouseOver, handleEditorMouseO
                         <div className="stat-box" key={stat}>
                           <span className="stat-name">{stat.toUpperCase()}</span>
                           <span className="stat-val" style={{ fontSize: '1.2em' }}>
-                            {card.stats?.hide_stats ? '???' : `${card.stats[stat]}`}
+                            {cardStats.hide_stats ? '???' : `${cardStats[stat]}`}
                           </span>
-                          {!card.stats?.hide_stats && <span style={{ fontSize: '0.9em', color: 'var(--text-muted)', marginTop: '4px' }}>({getModifier(card.stats[stat])})</span>}
+                          {!cardStats.hide_stats && <span style={{ fontSize: '0.9em', color: 'var(--text-muted)', marginTop: '4px' }}>({getModifier(cardStats[stat])})</span>}
                         </div>
                       ))}
                     </div>
@@ -1196,7 +1206,7 @@ function PlayerCard({ card, openModal, handleEditorMouseOver, handleEditorMouseO
                         }
                       }}
                     >
-                      <ParsedText text={card.content} stats={card.stats} />
+                      <ParsedText text={card.content} stats={cardStats} />
                     </div>
                   )}
                 </>
@@ -1326,13 +1336,6 @@ function PlayerDashboard({ session, user, onBack, openModal }: any) {
     if (!sheet) return;
     setSheet({ ...sheet, ...updates });
     await supabase!.from('player_sheets').update(updates).eq('id', sheet.id);
-  };
-
-  const getModifier = (score: number | string) => {
-    const num = parseInt(score as string, 10);
-    if (isNaN(num)) return score;
-    let mod = Math.floor((num - 10) / 2);
-    return mod >= 0 ? `+${mod}` : mod;
   };
 
   const handleEditorClick = (e: React.MouseEvent) => {
