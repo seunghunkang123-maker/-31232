@@ -524,19 +524,28 @@ function DMDashboard({ session, user, onBack, openModal, setActiveSession }: any
   };
 
   const updateCard = async (id: string, updates: Partial<CardData>) => {
-    await supabase!.from('cards').update(updates).eq('id', id);
-    fetchCards();
+    // Optimistic local update to avoid flickering/data loss
+    setCards(prev => prev.map(c => c.id === id ? { ...c, ...updates } : c));
+    const { error } = await supabase!.from('cards').update(updates).eq('id', id);
+    if (error) {
+       console.error(error);
+       fetchCards(); // sync if failed
+    }
   };
 
   const deleteCard = async (id: string) => {
     if (confirm('정말 삭제하시겠습니까?')) {
-      await supabase!.from('cards').delete().eq('id', id);
-      fetchCards();
+      const { error } = await supabase!.from('cards').delete().eq('id', id);
+      if (!error) {
+        setCards(prev => prev.filter(c => c.id !== id));
+      } else {
+        fetchCards();
+      }
     }
   };
 
   const updateSession = async (updates: Partial<SessionData>) => {
-    setActiveSession({ ...session, ...updates });
+    setActiveSession(prev => prev ? { ...prev, ...updates } : null);
     await supabase!.from('sessions').update(updates).eq('id', session.id);
   };
 
@@ -726,10 +735,22 @@ function DMCard({ card, updateCard, deleteCard, openModal }: any) {
   const [localStats, setLocalStats] = useState(card.stats || { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 });
   const [localContent, setLocalContent] = useState(card.content);
 
-  useEffect(() => { setLocalTitle(card.title); }, [card.title]);
+  // IME 입력 중인 필드 식별을 위한 ref
+  const titleInputRef = useRef<HTMLInputElement>(null);
+  const statsContainerRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => { 
-    if (card.stats) setLocalStats(card.stats);
+    if (document.activeElement !== titleInputRef.current) {
+      setLocalTitle(card.title); 
+    }
+  }, [card.title]);
+
+  useEffect(() => { 
+    if (card.stats && !statsContainerRef.current?.contains(document.activeElement)) {
+      setLocalStats(card.stats);
+    }
   }, [card.stats]);
+
   useEffect(() => { 
     // 에디터가 포커스 중이 아닐 때만 외부 변경사항 반영
     if (document.activeElement !== editorRef.current) {
@@ -778,8 +799,17 @@ function DMCard({ card, updateCard, deleteCard, openModal }: any) {
     if (trigger) {
       setTooltipData(prev => {
         if (prev && prev.el === trigger) return { ...prev, isPinned: !prev.isPinned };
-        if (prev && prev.isPinned) return null;
-        return prev;
+        
+        let memo = trigger.getAttribute('data-memo') || '';
+        try { memo = decodeURIComponent(memo); } catch (ex) {}
+        
+        return {
+          el: trigger,
+          content: memo,
+          stats: localStats,
+          type: 'user',
+          isPinned: true
+        };
       });
     }
   };
@@ -891,7 +921,16 @@ function DMCard({ card, updateCard, deleteCard, openModal }: any) {
           <div className="card" style={{ width: '100%', maxWidth: '800px', maxHeight: '90vh', overflowY: 'auto', background: 'var(--bg-main)', position: 'relative' }}>
             <div className="card-header" style={{ marginBottom: '20px', position: 'sticky', top: '-24px', background: 'var(--bg-main)', zIndex: 10, padding: '10px 0', borderBottom: '1px solid var(--border-color)', margin: '-24px -24px 20px -24px', paddingLeft: '24px', paddingRight: '24px' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
-                <input type="text" className="card-title" value={localTitle} onChange={e => setLocalTitle(e.target.value)} onBlur={() => { if (localTitle !== card.title) updateCard(card.id, { title: localTitle }) }} style={{ width: '100%', maxWidth: '400px', fontSize: '1.4em' }} placeholder="카드 제목" />
+                <input 
+                  type="text" 
+                  ref={titleInputRef}
+                  className="card-title" 
+                  value={localTitle} 
+                  onChange={e => setLocalTitle(e.target.value)} 
+                  onBlur={() => { if (localTitle !== card.title) updateCard(card.id, { title: localTitle }) }} 
+                  style={{ width: '100%', maxWidth: '400px', fontSize: '1.4em' }} 
+                  placeholder="카드 제목" 
+                />
                 <button className="btn" style={{ background: '#4b5563' }} onClick={() => setIsModalOpen(false)}>닫기</button>
               </div>
             </div>
@@ -985,7 +1024,7 @@ function DMCard({ card, updateCard, deleteCard, openModal }: any) {
               )}
 
               {card.type === 'statblock' && (
-                <div className="stats-grid" style={{ marginBottom: '25px', background: 'var(--card-bg)' }}>
+                <div className="stats-grid" ref={statsContainerRef} style={{ marginBottom: '25px', background: 'var(--card-bg)' }}>
                   {(['str', 'dex', 'con', 'int', 'wis', 'cha'] as const).map(stat => (
                     <div className="stat-box" key={stat}>
                       <span className="stat-name">{stat.toUpperCase()}</span>
@@ -1113,8 +1152,8 @@ function PlayerCard({ card, openModal, handleEditorMouseOver, handleEditorMouseO
     <>
       <div 
         className={`card player-card ${mode === 'full' ? '' : 'revealed'}`} 
-        style={{ opacity: (card.hp !== undefined && card.hp <= 0) ? 0.6 : 1, cursor: 'pointer', display: 'flex', flexDirection: 'column' }}
-        onClick={() => setIsModalOpen(true)}
+        style={{ opacity: (card.hp !== undefined && card.hp <= 0) ? 0.6 : 1, cursor: mode === 'name_only' ? 'default' : 'pointer', display: 'flex', flexDirection: 'column' }}
+        onClick={() => { if (mode !== 'name_only') setIsModalOpen(true); }}
       >
         <div className="card-header" style={{ marginBottom: (card.type === 'statblock' || card.hp !== undefined) ? '15px' : '0', paddingBottom: (card.type === 'statblock' || card.hp !== undefined) ? '15px' : '0', borderBottom: (card.type === 'statblock' || card.hp !== undefined) ? '1px solid var(--border-color)' : 'none' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1 }}>
@@ -1200,8 +1239,17 @@ function PlayerCard({ card, openModal, handleEditorMouseOver, handleEditorMouseO
                         if (trigger) {
                           setTooltipData((prev: any) => {
                             if (prev && prev.el === trigger) return { ...prev, isPinned: !prev.isPinned };
-                            if (prev && prev.isPinned) return null;
-                            return prev;
+                            
+                            let memo = trigger.getAttribute('data-memo') || '';
+                            try { memo = decodeURIComponent(memo); } catch (ex) {}
+                            
+                            return {
+                              el: trigger,
+                              content: memo,
+                              stats: cardStats,
+                              type: 'user',
+                              isPinned: true
+                            };
                           });
                         }
                       }}
@@ -1287,6 +1335,8 @@ function PlayerDashboard({ session, user, onBack, openModal }: any) {
   const [localStats, setLocalStats] = useState<Stats | null>(null);
   const [localContent, setLocalContent] = useState('');
   const editorRef = useRef<HTMLDivElement>(null);
+  const charNameInputRef = useRef<HTMLInputElement>(null);
+  const playerStatsContainerRef = useRef<HTMLDivElement>(null);
 
   const fetchCards = async () => {
     const { data } = await supabase!.from('cards').select('*').eq('session_id', session.id).order('created_at', { ascending: false });
@@ -1323,8 +1373,12 @@ function PlayerDashboard({ session, user, onBack, openModal }: any) {
 
   useEffect(() => {
     if (sheet) {
-      setLocalCharName(sheet.character_name);
-      setLocalStats(sheet.stats);
+      if (document.activeElement !== charNameInputRef.current) {
+        setLocalCharName(sheet.character_name);
+      }
+      if (!playerStatsContainerRef.current?.contains(document.activeElement)) {
+        setLocalStats(sheet.stats);
+      }
       // 에디터가 포커스 중이 아닐 때만 외부 변경사항 반영
       if (document.activeElement !== editorRef.current) {
         setLocalContent(sheet.content);
@@ -1345,8 +1399,17 @@ function PlayerDashboard({ session, user, onBack, openModal }: any) {
     if (trigger) {
       setTooltipData(prev => {
         if (prev && prev.el === trigger) return { ...prev, isPinned: !prev.isPinned };
-        if (prev && prev.isPinned) return null;
-        return prev;
+        
+        let memo = trigger.getAttribute('data-memo') || '';
+        try { memo = decodeURIComponent(memo); } catch (ex) {}
+        
+        return {
+          el: trigger,
+          content: memo,
+          stats: sheet?.stats || { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 },
+          type: 'user',
+          isPinned: true
+        };
       });
     }
   };
@@ -1429,13 +1492,20 @@ function PlayerDashboard({ session, user, onBack, openModal }: any) {
           <div className="card" style={{ flex: '1 1 400px', position: 'sticky', top: '20px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
               <User color="var(--accent-primary)" />
-              <input type="text" value={localCharName} onChange={e => setLocalCharName(e.target.value)} onBlur={() => { if (localCharName !== sheet.character_name) updateSheet({ character_name: localCharName }) }} style={{ background: 'transparent', border: 'none', color: 'var(--accent-primary)', fontSize: '1.3em', fontWeight: 'bold', outline: 'none', width: '100%' }} />
+              <input 
+                type="text" 
+                ref={charNameInputRef}
+                value={localCharName} 
+                onChange={e => setLocalCharName(e.target.value)} 
+                onBlur={() => { if (localCharName !== sheet.character_name) updateSheet({ character_name: localCharName }) }} 
+                style={{ background: 'transparent', border: 'none', color: 'var(--accent-primary)', fontSize: '1.3em', fontWeight: 'bold', outline: 'none', width: '100%' }} 
+              />
               <button className="btn btn-action" style={{ padding: '6px 12px', fontSize: '0.9em', whiteSpace: 'nowrap' }} onClick={() => { setShowLoadModal(true); fetchSavedSheets(); }}><Database size={14} style={{verticalAlign:'middle'}}/> 불러오기</button>
             </div>
 
             <HPBar current={sheet.hp ?? 10} max={sheet.max_hp ?? 10} temp={sheet.temp_hp ?? 0} isDM={true} onUpdate={(u) => updateSheet(u)} />
             
-            <div className="stats-grid" style={{ marginBottom: '20px' }}>
+            <div className="stats-grid" ref={playerStatsContainerRef} style={{ marginBottom: '20px' }}>
               {(['str', 'dex', 'con', 'int', 'wis', 'cha'] as const).map(stat => (
                 <div className="stat-box" key={stat}>
                   <span className="stat-name">{stat.toUpperCase()}</span>
