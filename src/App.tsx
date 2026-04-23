@@ -98,7 +98,7 @@ function HPBar({ current, max, temp = 0, isDM, onUpdate, hideNumbers }: { curren
             placeholder="Max" 
             value={max} 
             onChange={e => onUpdate?.({ max_hp: parseInt(e.target.value) || 1 })} 
-            style={{ width: '50px', background: 'var(--bg-main)', border: '1px solid var(--border-color)', color: 'white', borderRadius: '4px', textAlign: 'center', fontSize: '0.8em' }}
+            style={{ width: '50px', background: 'var(--bg-main)', border: '1px solid var(--border-color)', color: 'var(--text-main)', borderRadius: '4px', textAlign: 'center', fontSize: '0.8em' }}
           />
         </div>
       )}
@@ -272,12 +272,12 @@ function MainApp() {
     return () => clearInterval(interval);
   }, [activeSession?.timers]);
 
-  if (loading) return <div style={{ color: 'white', textAlign: 'center', marginTop: '50px' }}>로딩 중...</div>;
+  if (loading) return <div style={{ color: 'var(--text-main)', textAlign: 'center', marginTop: '50px' }}>로딩 중...</div>;
   if (!user) return <AuthScreen onLogin={setUser} />;
 
   return (
     <div className="app-container" style={{
-      backgroundImage: activeSession?.background_url ? `linear-gradient(rgba(15, 23, 42, 0.85), rgba(15, 23, 42, 0.85)), url(${activeSession.background_url})` : 'none',
+      backgroundImage: activeSession?.background_url ? `linear-gradient(rgba(255, 255, 255, 0.85), rgba(255, 255, 255, 0.85)), url(${activeSession.background_url})` : 'none',
       backgroundSize: 'cover', backgroundPosition: 'center', backgroundAttachment: 'fixed',
       minHeight: '100vh', transition: 'background-image 0.5s ease-in-out'
     }}>
@@ -447,7 +447,7 @@ function SessionLobby({ user, onSelect }: any) {
             placeholder="새 세션 이름 (예: 2026-04-04 첫 모험)" 
             value={newName} 
             onChange={e => setNewName(e.target.value)} 
-            style={{ flex: 1, padding: '12px', borderRadius: '8px', border: '1px solid var(--border-color)', background: 'rgba(0,0,0,0.2)', color: 'var(--text-main)' }}
+            style={{ flex: 1, padding: '12px', borderRadius: '8px', border: '1px solid var(--border-color)', background: 'var(--bg-main)', color: 'var(--text-main)' }}
             onKeyDown={e => e.key === 'Enter' && handleCreate()}
           />
           <button className="btn btn-add" onClick={handleCreate}><Plus size={16} style={{ verticalAlign: 'middle' }}/> 새 세션 생성</button>
@@ -816,67 +816,78 @@ function DMCard({ card, updateCard, deleteCard, openModal }: any) {
   };
 
   return (
-    <div className={`card ${card.reveal_mode === 'full' ? 'revealed' : ''}`} style={{ opacity: (card.hp !== undefined && card.hp <= 0) ? 0.6 : 1 }}>
+    <div className={`card ${card.reveal_mode !== 'hidden' ? 'revealed' : ''}`} style={{ opacity: (card.hp !== undefined && card.hp <= 0) ? 0.6 : 1 }}>
       <div className="card-header" onClick={() => setIsExpanded(!isExpanded)} style={{ cursor: 'pointer', userSelect: 'none' }}>
-        <div style={{ display: 'flex', flexDirection: 'column', width: '50%' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <span style={{ color: 'var(--accent-primary)', fontSize: '1.2em', transition: 'transform 0.2s', transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)' }}>▶</span>
-            <div style={{ display: 'flex', alignItems: 'center', width: '100%', gap: '5px' }} onClick={e => e.stopPropagation()}>
-              <input type="text" className="card-title" value={localTitle} onChange={e => setLocalTitle(e.target.value)} onBlur={() => { if (localTitle !== card.title) updateCard(card.id, { title: localTitle }) }} style={{ width: '100%' }} />
-              <button className={`reveal-btn ${card.stats?.hide_name ? 'hidden' : 'active'}`} onClick={() => updateCard(card.id, { stats: { ...card.stats, hide_name: !card.stats?.hide_name } })} title="플레이어에게 이름 숨기기/보이기">
-                {card.stats?.hide_name ? <EyeOff size={16}/> : <Eye size={16}/>}
-              </button>
-            </div>
-          </div>
-          {card.stats?.hide_name && (
-            <div style={{ paddingLeft: '25px', marginTop: '5px', display: 'flex', alignItems: 'center', gap: '5px' }} onClick={e => e.stopPropagation()}>
-              <span style={{ fontSize: '0.8em', color: 'var(--text-muted)' }}>↳ 가명:</span>
-              <input 
-                type="text" 
-                value={card.stats?.alt_name || ''} 
-                onChange={e => updateCard(card.id, { stats: { ...card.stats, alt_name: e.target.value } })}
-                placeholder="??? (미확인 개체)"
-                style={{ fontSize: '0.8em', padding: '2px 8px', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border-color)', color: 'var(--text-main)', borderRadius: '4px', flex: 1 }}
-              />
-            </div>
-          )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1 }} onClick={e => e.stopPropagation()}>
+          <span style={{ color: 'var(--accent-primary)', fontSize: '1.2em', transition: 'transform 0.2s', transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)', cursor: 'pointer' }} onClick={() => setIsExpanded(!isExpanded)}>▶</span>
+          <input type="text" className="card-title" value={localTitle} onChange={e => setLocalTitle(e.target.value)} onBlur={() => { if (localTitle !== card.title) updateCard(card.id, { title: localTitle }) }} style={{ width: '100%', maxWidth: '300px' }} />
         </div>
-        <div onClick={e => e.stopPropagation()} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <div className="reveal-btn-group">
-            <button className={`reveal-btn ${card.reveal_mode === 'hidden' ? 'active hidden' : ''}`} onClick={() => updateCard(card.id, { reveal_mode: 'hidden' })} title="완전 비공개"><EyeOff size={14}/></button>
-            <button className={`reveal-btn ${card.reveal_mode === 'name_only' ? 'active' : ''}`} onClick={() => updateCard(card.id, { reveal_mode: 'name_only' })} title="이름만 공개"><User size={14}/></button>
-            <button className={`reveal-btn ${card.reveal_mode === 'image_only' ? 'active' : ''}`} onClick={() => updateCard(card.id, { reveal_mode: 'image_only' })} title="이미지만 공개"><ImageIcon size={14}/></button>
-            <button className={`reveal-btn ${card.reveal_mode === 'full' ? 'active full' : ''}`} onClick={() => updateCard(card.id, { reveal_mode: 'full' })} title="완전 공개"><Eye size={14}/></button>
-          </div>
-          <button className="btn btn-danger" style={{ padding: '8px' }} onClick={() => deleteCard(card.id)}><Trash2 size={16}/></button>
+        <div onClick={e => e.stopPropagation()} style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <button 
+            className={`btn ${card.reveal_mode === 'hidden' ? '' : 'btn-success'}`} 
+            style={{ padding: '6px 12px', display: 'flex', alignItems: 'center', gap: '6px', background: card.reveal_mode === 'hidden' ? 'var(--bg-main)' : 'var(--accent-success)' }}
+            onClick={() => updateCard(card.id, { reveal_mode: card.reveal_mode === 'hidden' ? 'full' : 'hidden' })}
+          >
+            {card.reveal_mode === 'hidden' ? <><EyeOff size={14}/> 비공개</> : <><Eye size={14}/> 플레이어에게 공개됨</>}
+          </button>
+          <button className="btn btn-danger" style={{ padding: '6px 10px' }} onClick={() => deleteCard(card.id)} title="카드 삭제"><Trash2 size={16}/></button>
         </div>
       </div>
 
       {isExpanded && (
         <div className="card-body">
-          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '5px', gap: '5px' }}>
-             <button 
-               className={`reveal-btn ${(!card.stats?.hide_hp && !card.stats?.hide_hp_text) ? 'active' : ''}`} 
-               style={{ width: 'auto', padding: '4px 8px', fontSize: '0.8em', border: '1px solid var(--border-color)', borderRadius: '4px' }} 
-               onClick={() => updateCard(card.id, { stats: { ...card.stats, hide_hp: false, hide_hp_text: false } })} 
-               title="플레이어에게 수치와 바 모두 공개">
-               <Eye size={14} style={{verticalAlign:'middle', marginRight:'4px'}}/> 수치+바 공개 (HP)
-             </button>
-             <button 
-               className={`reveal-btn ${(!card.stats?.hide_hp && card.stats?.hide_hp_text) ? 'active' : ''}`} 
-               style={{ width: 'auto', padding: '4px 8px', fontSize: '0.8em', border: '1px solid var(--border-color)', borderRadius: '4px', opacity: (!card.stats?.hide_hp && card.stats?.hide_hp_text) ? 1 : 0.6 }} 
-               onClick={() => updateCard(card.id, { stats: { ...card.stats, hide_hp: false, hide_hp_text: true } })} 
-               title="플레이어에게 체력바만 공개 (수치 숨김)">
-               <Eye size={14} style={{verticalAlign:'middle', marginRight:'4px'}}/> 바만 공개 (수치 숨김)
-             </button>
-             <button 
-               className={`reveal-btn ${card.stats?.hide_hp ? 'hidden active' : ''}`} 
-               style={{ width: 'auto', padding: '4px 8px', fontSize: '0.8em', border: '1px solid var(--border-color)', borderRadius: '4px', opacity: card.stats?.hide_hp ? 1 : 0.6 }} 
-               onClick={() => updateCard(card.id, { stats: { ...card.stats, hide_hp: true, hide_hp_text: false } })} 
-               title="플레이어 화면에서 HP 완전 숨김">
-               <EyeOff size={14} style={{verticalAlign:'middle', marginRight:'4px'}}/> HP 완전 숨기기
-             </button>
+          <div style={{ background: 'var(--stat-bg)', padding: '12px', borderRadius: '8px', marginBottom: '20px', border: '1px solid var(--border-color)', fontSize: '0.9em' }}>
+            <div style={{ fontWeight: 'bold', marginBottom: '10px', color: 'var(--accent-primary)', display: 'flex', alignItems: 'center', gap: '5px' }}>
+              <Eye size={16} /> 플레이어 화면 표시 설정
+            </div>
+            
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+                <span style={{ color: 'var(--text-muted)', width: '80px' }}>공개 범위:</span>
+                <select 
+                  value={card.reveal_mode} 
+                  onChange={e => updateCard(card.id, { reveal_mode: e.target.value as any })}
+                  style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: 'var(--text-main)', padding: '4px 8px', borderRadius: '4px', fontSize: '0.95em' }}
+                >
+                  <option value="hidden">완전 비공개</option>
+                  <option value="name_only">이름만 공개 (상세정보/이미지 숨기기)</option>
+                  <option value="image_only">이미지만 공개 (상세정보 숨기기)</option>
+                  <option value="full">전체 공개 (스탯, 내용 포함)</option>
+                </select>
+              </div>
+
+              {card.reveal_mode !== 'hidden' && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+                  <span style={{ color: 'var(--text-muted)', width: '80px' }}>이름 표시:</span>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer' }}>
+                    <input type="radio" checked={!card.stats?.hide_name} onChange={() => updateCard(card.id, { stats: { ...card.stats, hide_name: false }})} /> 진짜 이름
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer' }}>
+                    <input type="radio" checked={card.stats?.hide_name} onChange={() => updateCard(card.id, { stats: { ...card.stats, hide_name: true }})} /> 가명 사용
+                  </label>
+                  {card.stats?.hide_name && (
+                    <input type="text" value={card.stats?.alt_name || ''} onChange={e => updateCard(card.id, { stats: {...card.stats, alt_name: e.target.value }})} placeholder="??? (미확인 개체)" style={{ padding: '2px 8px', background: 'var(--bg-main)', border: '1px solid var(--border-color)', color: 'var(--text-main)', borderRadius: '4px', width: '140px' }} />
+                  )}
+                </div>
+              )}
+
+              {card.reveal_mode === 'full' && card.hp !== undefined && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+                  <span style={{ color: 'var(--text-muted)', width: '80px' }}>HP 표시:</span>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer' }}>
+                    <input type="radio" checked={!card.stats?.hide_hp && !card.stats?.hide_hp_text} onChange={() => updateCard(card.id, { stats: { ...card.stats, hide_hp: false, hide_hp_text: false }})} /> 수치+바(Bar)
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer' }}>
+                    <input type="radio" checked={!card.stats?.hide_hp && card.stats?.hide_hp_text} onChange={() => updateCard(card.id, { stats: { ...card.stats, hide_hp: false, hide_hp_text: true }})} /> 바(Bar)만
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer' }}>
+                    <input type="radio" checked={card.stats?.hide_hp} onChange={() => updateCard(card.id, { stats: { ...card.stats, hide_hp: true, hide_hp_text: false }})} /> 숨김
+                  </label>
+                </div>
+              )}
+            </div>
           </div>
+
           <HPBar current={card.hp ?? 10} max={card.max_hp ?? 10} temp={card.temp_hp ?? 0} isDM={true} onUpdate={(u) => updateCard(card.id, u)} />
           
           {(card.type === 'image' || card.type === 'statblock') && (
@@ -1440,8 +1451,8 @@ function InitiativeTracker({ sessionId, isDM }: { sessionId: string, isDM: boole
 
       {isDM && (
         <div style={{ display: 'flex', gap: '10px', marginTop: '15px' }}>
-          <input type="text" placeholder="이름 (캐릭터/몬스터)" value={newName} onChange={e => setNewName(e.target.value)} style={{ flex: 1, padding: '10px', borderRadius: '6px', border: '1px solid var(--border-color)', background: 'var(--bg-main)', color: 'white' }} />
-          <input type="number" placeholder="우선권 수치" value={newScore} onChange={e => setNewScore(e.target.value)} style={{ width: '100px', padding: '10px', borderRadius: '6px', border: '1px solid var(--border-color)', background: 'var(--bg-main)', color: 'white' }} onKeyDown={e => e.key === 'Enter' && handleAdd()} />
+          <input type="text" placeholder="이름 (캐릭터/몬스터)" value={newName} onChange={e => setNewName(e.target.value)} style={{ flex: 1, padding: '10px', borderRadius: '6px', border: '1px solid var(--border-color)', background: 'var(--bg-main)', color: 'var(--text-main)' }} />
+          <input type="number" placeholder="우선권 수치" value={newScore} onChange={e => setNewScore(e.target.value)} style={{ width: '100px', padding: '10px', borderRadius: '6px', border: '1px solid var(--border-color)', background: 'var(--bg-main)', color: 'var(--text-main)' }} onKeyDown={e => e.key === 'Enter' && handleAdd()} />
           <button className="btn btn-add" onClick={handleAdd}>추가</button>
         </div>
       )}
@@ -1566,7 +1577,7 @@ function TimerManager({ timers, isDM, onUpdate, onDelete }: { timers: TimerData[
                   type="text" 
                   value={t.label} 
                   onChange={e => onUpdate?.(t.id, { label: e.target.value })} 
-                  style={{ background: 'transparent', border: 'none', color: 'white', fontWeight: 'bold', width: '100%', outline: 'none' }}
+                  style={{ background: 'transparent', border: 'none', color: 'var(--text-main)', fontWeight: 'bold', width: '100%', outline: 'none' }}
                 />
               ) : (
                 t.label
