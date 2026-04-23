@@ -574,36 +574,55 @@ function DMDashboard({ session, user, onBack, openModal, setActiveSession }: any
   );
 
   const fetchCards = async () => {
-    const { data, error } = await supabase!.from('cards')
-      .select('*')
-      .eq('session_id', session.id)
-      .order('sort_order', { ascending: true })
-      .order('created_at', { ascending: true });
-      
-    if (error && error.message.includes('column "sort_order" does not exist')) {
-      alert('데이터베이스 스키마가 업데이트되지 않아 오류가 발생했습니다.\n\nsupabase_schema.sql 파일의 안내에 따라 SQL을 실행하여 테이블 및 컬럼을 업데이트해주세요.');
-      // 임시 폴백으로 에러 없이 카드라도 불러오기
-      const fallback = await supabase!.from('cards').select('*').eq('session_id', session.id);
-      if (fallback.data) {
-        setCards(fallback.data.map(c => ({...c, folder_id: null, sort_order: 0, hp: 10, max_hp: 10, temp_hp: 0, reveal_mode: 'hidden'})));
+    try {
+      const { data, error } = await supabase!.from('cards')
+        .select('*')
+        .eq('session_id', session.id)
+        .order('sort_order', { ascending: true })
+        .order('created_at', { ascending: true });
+        
+      if (error) {
+        console.error('fetchCards error:', error);
+        if (error.message.includes('column "sort_order" does not exist')) {
+          alert('데이터베이스 스키마가 업데이트되지 않아 오류가 발생했습니다.\n\nsupabase_schema.sql 파일의 안내에 따라 SQL을 실행하여 테이블 및 컬럼을 업데이트해주세요.');
+          // 임시 폴백으로 에러 없이 카드라도 불러오기
+          const fallback = await supabase!.from('cards').select('*').eq('session_id', session.id);
+          if (fallback.data) {
+            setCards(fallback.data.map((c: any) => ({...c, folder_id: c.folder_id || null, sort_order: c.sort_order || 0, hp: c.hp ?? 10, max_hp: c.max_hp ?? 10, temp_hp: c.temp_hp ?? 0, reveal_mode: c.reveal_mode || 'hidden'})));
+          }
+          return;
+        }
       }
-      return;
-    }
 
-    if (data) setCards(data);
+      if (data) setCards(data);
+    } catch (err) {
+      console.error('fetchCards exception:', err);
+    }
   };
 
   const fetchFolders = async () => {
-    const { data, error } = await supabase!.from('folders')
-      .select('*')
-      .eq('session_id', session.id)
-      .order('sort_order', { ascending: true });
-      
-    if (error && error.message.includes('relation "public.folders" does not exist')) {
-      // alert already shown by fetchCards if missing
-      return;
+    try {
+      console.log('Fetching folders for session:', session.id);
+      const { data, error } = await supabase!.from('folders')
+        .select('*')
+        .eq('session_id', session.id)
+        .order('sort_order', { ascending: true });
+        
+      if (error) {
+        console.error('fetchFolders error:', error);
+        if (error.message.includes('relation "public.folders" does not exist')) {
+          setFolders([]);
+          return;
+        }
+        alert('폴더를 불러오지 못했습니다: ' + error.message);
+      }
+      console.log('Folders data received:', data);
+      if (data) setFolders(data);
+      else setFolders([]);
+    } catch (err) {
+      console.error('fetchFolders exception:', err);
+      setFolders([]);
     }
-    if (data) setFolders(data || []);
   };
 
   const fetchSavedMonsters = async () => {
@@ -708,9 +727,15 @@ function DMDashboard({ session, user, onBack, openModal, setActiveSession }: any
   const addFolder = async () => {
     const name = prompt('폴더 이름을 입력하세요:');
     if (!name) return;
+    
     const lastFolder = [...folders].sort((a,b) => b.sort_order - a.sort_order)[0];
     const newOrder = lastFolder ? lastFolder.sort_order + 1 : 0;
-    await supabase!.from('folders').insert([{ session_id: session.id, name, sort_order: newOrder }]);
+    
+    const { error } = await supabase!.from('folders').insert([{ session_id: session.id, name, sort_order: newOrder }]);
+    if (error) {
+      console.error('addFolder error:', error);
+      alert('폴더 생성 실패: ' + error.message);
+    }
     fetchFolders();
   };
 
@@ -854,6 +879,9 @@ function DMDashboard({ session, user, onBack, openModal, setActiveSession }: any
 
         <div className="toolbar" style={{ marginBottom: '30px', justifyContent: 'center', background: 'transparent', border: 'none', gap: '12px' }}>
           <button className="btn btn-action" style={{background: '#8b5cf6'}} onClick={addFolder}><FolderPlus size={16} style={{verticalAlign:'middle'}}/> 폴더 생성</button>
+          <div style={{ color: 'var(--text-muted)', fontSize: '0.8em', display: 'flex', alignItems: 'center' }}>
+            폴더: {folders.length}개 / 카드: {cards.length}개
+          </div>
           <button className="btn btn-action" onClick={() => { setShowLoadModal(true); fetchSavedMonsters(); }}><Database size={16} style={{verticalAlign:'middle'}}/> 몬스터 불러오기</button>
           <button className="btn btn-add" onClick={() => addCard('statblock')}><User size={16} style={{verticalAlign:'middle'}}/> 몬스터/NPC 추가</button>
           <button className="btn btn-add" onClick={() => addCard('image')}><ImageIcon size={16} style={{verticalAlign:'middle'}}/> 지도/이미지 추가</button>
