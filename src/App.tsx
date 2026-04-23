@@ -758,56 +758,65 @@ function DMDashboard({ session, user, onBack, openModal, setActiveSession }: any
     const { active, over } = event;
     if (!over) return;
 
-    // Check if reordering folders
+    console.log('DragEnd - Active:', active.id, 'Over:', over.id);
+
+    // 1. Check if reordering folders
     const activeFolder = folders.find(f => f.id === active.id);
     const overFolder = folders.find(f => f.id === over.id);
 
     if (activeFolder && overFolder) {
-      const oldIndex = folders.indexOf(activeFolder);
-      const newIndex = folders.indexOf(overFolder);
-      const newFolders = arrayMove(folders, oldIndex, newIndex) as FolderData[];
-      setFolders(newFolders);
-      
-      // Update all folders order
-      const updates = newFolders.map((f: FolderData, i: number) => 
-        supabase!.from('folders').update({ sort_order: i }).eq('id', f.id)
-      );
-      await Promise.all(updates);
+      if (active.id !== over.id) {
+        const oldIndex = folders.indexOf(activeFolder);
+        const newIndex = folders.indexOf(overFolder);
+        const newFolders = arrayMove(folders, oldIndex, newIndex) as FolderData[];
+        setFolders(newFolders);
+        
+        const updates = newFolders.map((f: FolderData, i: number) => 
+          supabase!.from('folders').update({ sort_order: i }).eq('id', f.id)
+        );
+        await Promise.all(updates);
+      }
       return;
     }
 
-    // Check if reordering cards
+    // 2. Check if reordering/moving cards
     const activeCard = cards.find(c => c.id === active.id);
+    if (!activeCard) return;
+
+    // Check if dropping onto a folder specifically (id starts with folder id)
+    const isOverFolder = folders.some(f => f.id === over.id);
     const overCard = cards.find(c => c.id === over.id);
 
-    if (activeCard && overCard) {
-      const oldIndex = cards.indexOf(activeCard);
-      const newIndex = cards.indexOf(overCard);
+    if (isOverFolder || overCard) {
+      const newFolderId = isOverFolder ? String(over.id) : overCard?.folder_id || null;
       
-      // If folder changed
-      const oldFolderId = activeCard.folder_id;
-      const newFolderId = overCard.folder_id;
+      if (activeCard.id !== over.id) {
+        let newCards = [...cards];
+        const oldIndex = cards.indexOf(activeCard);
+        
+        // Find new index position
+        let newIndex = overCard ? cards.indexOf(overCard) : cards.length;
+        
+        // Move in array
+        newCards = arrayMove(cards, oldIndex, newIndex) as CardData[];
+        // Update folder_id for the active card
+        newCards = newCards.map(c => c.id === active.id ? { ...c, folder_id: newFolderId } : c);
+        
+        setCards(newCards);
 
-      let newCards = arrayMove(cards, oldIndex, newIndex) as CardData[];
-      if (oldFolderId !== newFolderId) {
-        newCards = newCards.map((c: CardData) => c.id === active.id ? { ...c, folder_id: newFolderId } : c);
+        // Update DB
+        await supabase!.from('cards').update({ 
+          folder_id: newFolderId,
+          sort_order: newIndex 
+        }).eq('id', active.id);
+
+        // Batch update all orders to be safe
+        const updates = newCards.map((c, i) => 
+          supabase!.from('cards').update({ sort_order: i }).eq('id', c.id)
+        );
+        await Promise.all(updates);
       }
-      
-      setCards(newCards);
-
-      // Persist changes
-      // Update specific card folder if changed
-      if (oldFolderId !== newFolderId) {
-        await supabase!.from('cards').update({ folder_id: newFolderId }).eq('id', active.id);
-      }
-
-      // Update all cards in affected folders (or just all for simplicity if small dataset)
-      const updates = newCards.map((c: CardData, i: number) => 
-        supabase!.from('cards').update({ sort_order: i }).eq('id', c.id)
-      );
-      await Promise.all(updates);
     }
-
     
     fetchCards();
   };
@@ -976,7 +985,7 @@ function FolderSection({ folder, cards, updateCard, deleteCard, openModal, updat
   };
 
   return (
-    <div ref={setNodeRef} style={style} className="folder-section">
+    <div ref={setNodeRef} style={style} className="folder-section" id={folder.id}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px', background: 'var(--accent-primary)', padding: '12px 20px', borderRadius: '12px', color: 'white', cursor: 'default' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '15px', flex: 1 }}>
           <div {...attributes} {...listeners} style={{ cursor: 'grab', padding: '4px' }}><GripVertical size={20} /></div>
