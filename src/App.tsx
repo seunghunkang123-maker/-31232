@@ -1,9 +1,31 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase, isSupabaseConfigured } from './lib/supabase';
-import { Dices, Swords, User, LogOut, Plus, Trash2, Eye, EyeOff, BookOpen, Save, Image as ImageIcon, FileText, Database, Timer, Play, Pause, RotateCcw, X, Minus } from 'lucide-react';
+import { Dices, Swords, User, LogOut, Plus, Trash2, Eye, EyeOff, BookOpen, Save, Image as ImageIcon, FileText, Database, Timer, Play, Pause, RotateCcw, X, Minus, FolderPlus, Folder, ChevronDown, ChevronRight, GripVertical, Settings2 } from 'lucide-react';
 import { ParsedText } from './components/ParsedText';
 import { GlobalTooltip, TooltipData } from './components/GlobalTooltip';
 import { keywordDictionary } from './lib/keywordDictionary';
+import { 
+  DndContext, 
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+  DragStartEvent,
+  DragOverEvent,
+  defaultDropAnimationSideEffects
+} from '@dnd-kit/core';
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+  rectSortingStrategy,
+  useSortable
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
+import { restrictToWindowEdges } from '@dnd-kit/modifiers';
 
 // --- Types ---
 type CardType = 'statblock' | 'image' | 'text';
@@ -16,6 +38,15 @@ interface CardData {
   id: string; session_id: string; type: CardType; title: string; content: string;
   img_src?: string; is_revealed: boolean; reveal_mode?: RevealMode; stats: Stats;
   hp?: number; max_hp?: number; temp_hp?: number;
+  folder_id?: string | null;
+  sort_order?: number;
+}
+
+interface FolderData {
+  id: string;
+  session_id: string;
+  name: string;
+  sort_order: number;
 }
 
 interface TimerData {
@@ -195,6 +226,18 @@ ALTER TABLE public.cards ADD COLUMN IF NOT EXISTS temp_hp INTEGER DEFAULT 0;
 ALTER TABLE public.player_sheets ADD COLUMN IF NOT EXISTS hp INTEGER DEFAULT 10;
 ALTER TABLE public.player_sheets ADD COLUMN IF NOT EXISTS max_hp INTEGER DEFAULT 10;
 ALTER TABLE public.player_sheets ADD COLUMN IF NOT EXISTS temp_hp INTEGER DEFAULT 0;
+
+CREATE TABLE IF NOT EXISTS public.folders (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    session_id UUID REFERENCES public.sessions(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    sort_order INTEGER DEFAULT 0,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+ALTER TABLE public.cards ADD COLUMN IF NOT EXISTS folder_id UUID REFERENCES public.folders(id) ON DELETE SET NULL;
+ALTER TABLE public.cards ADD COLUMN IF NOT EXISTS sort_order INTEGER DEFAULT 0;
+
 ALTER TABLE public.users DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.sessions DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.cards DISABLE ROW LEVEL SECURITY;
@@ -473,50 +516,154 @@ function SessionLobby({ user, onSelect }: any) {
   );
 }
 
+// --- DM Dashboard Helpers ---
+function SortableDMCard({ card, updateCard, deleteCard, openModal }: any) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging
+  } = useSortable({ id: card.id });
+
+  const style = {
+    transform: CSS.Translate.toString(transform),
+    transition,
+    opacity: isDragging ? 0.3 : 1,
+    zIndex: isDragging ? 50 : 'auto',
+    position: 'relative' as const,
+  };
+
+  return (
+    <div ref={setNodeRef} style={style}>
+      <div 
+        {...attributes} 
+        {...listeners} 
+        style={{ 
+          position: 'absolute', top: '24px', left: '10px', zIndex: 20, 
+          cursor: 'grab', color: 'var(--text-muted)',
+          padding: '4px', background: 'var(--card-bg)', borderRadius: '4px',
+          border: '1px solid var(--border-color)', display: 'flex', alignItems: 'center'
+        }}
+        title="드래그하여 이동"
+      >
+        <GripVertical size={16} />
+      </div>
+      <DMCard 
+        card={card} 
+        updateCard={updateCard} 
+        deleteCard={deleteCard} 
+        openModal={openModal}
+      />
+    </div>
+  );
+}
+
 // --- DM Dashboard ---
 function DMDashboard({ session, user, onBack, openModal, setActiveSession }: any) {
   const [cards, setCards] = useState<CardData[]>([]);
+  const [folders, setFolders] = useState<FolderData[]>([]);
   const [showLoadModal, setShowLoadModal] = useState(false);
   const [savedMonsters, setSavedMonsters] = useState<any[]>([]);
+  const [activeId, setActiveId] = useState<string | null>(null);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  );
 
   const fetchCards = async () => {
-    const { data } = await supabase!.from('cards').select('*').eq('session_id', session.id).order('created_at', { ascending: false });
+    const { data } = await supabase!.from('cards')
+      .select('*')
+      .eq('session_id', session.id)
+      .order('sort_order', { ascending: true })
+      .order('created_at', { ascending: true });
     if (data) setCards(data);
+  };
+
+  const fetchFolders = async () => {
+    const { data } = await supabase!.from('folders')
+      .select('*')
+      .eq('session_id', session.id)
+      .order('sort_order', { ascending: true });
+    if (data) setFolders(data || []);
   };
 
   const fetchSavedMonsters = async () => {
     const { data: sessions } = await supabase!.from('sessions').select('id, name').eq('dm_id', user.id);
     if (sessions && sessions.length > 0) {
       const sessionIds = sessions.map((s: any) => s.id);
-      const { data: cards } = await supabase!.from('cards')
+      const { data: monsters } = await supabase!.from('cards')
         .select('*')
         .in('session_id', sessionIds)
         .eq('type', 'statblock');
       
-      const cardsWithSession = cards?.map((c: any) => ({
+      const monstersWithSession = monsters?.map((c: any) => ({
         ...c,
         session_name: sessions.find((s: any) => s.id === c.session_id)?.name
       }));
-      setSavedMonsters(cardsWithSession || []);
+      setSavedMonsters(monstersWithSession || []);
     }
   };
 
   useEffect(() => {
     fetchCards();
-    const channel = supabase!.channel('cards_changes')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'cards', filter: `session_id=eq.${session.id}` }, fetchCards)
+    fetchFolders();
+    
+    const cardsChannel = supabase!.channel('cards_changes_dm')
+      .on('postgres_changes', { 
+        event: '*', 
+        schema: 'public', 
+        table: 'cards', 
+        filter: `session_id=eq.${session.id}` 
+      }, (payload) => {
+        if (payload.eventType === 'INSERT') {
+          setCards(prev => [...prev, payload.new as CardData].sort((a,b) => (a.sort_order || 0) - (b.sort_order || 0)));
+        } else if (payload.eventType === 'UPDATE') {
+          setCards(prev => prev.map(c => c.id === payload.new.id ? { ...c, ...payload.new } : c));
+        } else if (payload.eventType === 'DELETE') {
+          setCards(prev => prev.filter(c => c.id !== payload.old.id));
+        }
+      })
       .subscribe();
-    return () => { supabase!.removeChannel(channel); };
+
+    const foldersChannel = supabase!.channel('folders_changes_dm')
+      .on('postgres_changes', { 
+        event: '*', 
+        schema: 'public', 
+        table: 'folders', 
+        filter: `session_id=eq.${session.id}` 
+      }, (payload) => {
+        if (payload.eventType === 'INSERT') {
+          setFolders(prev => [...prev, payload.new as FolderData].sort((a,b) => a.sort_order - b.sort_order));
+        } else if (payload.eventType === 'UPDATE') {
+          setFolders(prev => prev.map(f => f.id === payload.new.id ? { ...f, ...payload.new } : f).sort((a,b) => a.sort_order - b.sort_order));
+        } else if (payload.eventType === 'DELETE') {
+          setFolders(prev => prev.filter(f => f.id !== payload.old.id));
+        }
+      })
+      .subscribe();
+
+    return () => { 
+      supabase!.removeChannel(cardsChannel);
+      supabase!.removeChannel(foldersChannel);
+    };
   }, [session.id]);
 
-  const addCard = async (type: CardType) => {
+  const addCard = async (type: CardType, folderId?: string | null) => {
+    const lastCard = cards.filter(c => c.folder_id === (folderId || null)).sort((a,b) => (b.sort_order || 0) - (a.sort_order || 0))[0];
+    const newOrder = lastCard ? (lastCard.sort_order || 0) + 1 : 0;
+
     const newCard: any = {
       session_id: session.id, type,
       title: type === 'statblock' ? '새 몬스터' : type === 'image' ? '새 이미지' : '새 텍스트',
       content: type === 'statblock' ? '<b>방어도</b> 10<br><b>HP</b> 10 (2d8)<br><b>이동 속도</b> 30ft<hr><b>행동</b><br>공격: +2 명중, 1d6 피해.' : '',
       is_revealed: false,
       reveal_mode: 'hidden',
-      stats: { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 }
+      stats: { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 },
+      folder_id: folderId || null,
+      sort_order: newOrder
     };
     
     if (type === 'statblock') {
@@ -529,49 +676,103 @@ function DMDashboard({ session, user, onBack, openModal, setActiveSession }: any
   };
 
   const updateCard = async (id: string, updates: Partial<CardData>) => {
-    // Optimistic local update to avoid flickering/data loss
     setCards(prev => prev.map(c => c.id === id ? { ...c, ...updates } : c));
     const { error } = await supabase!.from('cards').update(updates).eq('id', id);
-    if (error) {
-       console.error(error);
-       fetchCards(); // sync if failed
-    }
+    if (error) fetchCards();
   };
 
   const deleteCard = async (id: string) => {
     if (confirm('정말 삭제하시겠습니까?')) {
       const { error } = await supabase!.from('cards').delete().eq('id', id);
-      if (!error) {
-        setCards(prev => prev.filter(c => c.id !== id));
-      } else {
-        fetchCards();
-      }
+      if (!error) setCards(prev => prev.filter(c => c.id !== id));
+      else fetchCards();
     }
+  };
+
+  const addFolder = async () => {
+    const name = prompt('폴더 이름을 입력하세요:');
+    if (!name) return;
+    const lastFolder = [...folders].sort((a,b) => b.sort_order - a.sort_order)[0];
+    const newOrder = lastFolder ? lastFolder.sort_order + 1 : 0;
+    await supabase!.from('folders').insert([{ session_id: session.id, name, sort_order: newOrder }]);
+    fetchFolders();
+  };
+
+  const updateFolder = async (id: string, updates: Partial<FolderData>) => {
+    setFolders(prev => prev.map(f => f.id === id ? { ...f, ...updates } : f));
+    await supabase!.from('folders').update(updates).eq('id', id);
+    fetchFolders();
+  };
+
+  const deleteFolder = async (id: string) => {
+    if (confirm('폴더를 삭제하시겠습니까? 폴더 안의 카드들은 폴더 밖으로 이동됩니다.')) {
+      await supabase!.from('cards').update({ folder_id: null }).eq('folder_id', id);
+      await supabase!.from('folders').delete().eq('id', id);
+      fetchFolders();
+      fetchCards();
+    }
+  };
+
+  const handleDragEnd = async (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over) return;
+
+    // Check if reordering folders
+    const activeFolder = folders.find(f => f.id === active.id);
+    const overFolder = folders.find(f => f.id === over.id);
+
+    if (activeFolder && overFolder) {
+      const oldIndex = folders.indexOf(activeFolder);
+      const newIndex = folders.indexOf(overFolder);
+      const newFolders = arrayMove(folders, oldIndex, newIndex);
+      setFolders(newFolders);
+      
+      // Update all folders order
+      const updates = newFolders.map((f, i) => 
+        supabase!.from('folders').update({ sort_order: i }).eq('id', f.id)
+      );
+      await Promise.all(updates);
+      return;
+    }
+
+    // Check if reordering cards
+    const activeCard = cards.find(c => c.id === active.id);
+    const overCard = cards.find(c => c.id === over.id);
+
+    if (activeCard && overCard) {
+      const oldIndex = cards.indexOf(activeCard);
+      const newIndex = cards.indexOf(overCard);
+      
+      // If folder changed
+      const oldFolderId = activeCard.folder_id;
+      const newFolderId = overCard.folder_id;
+
+      let newCards = arrayMove(cards, oldIndex, newIndex);
+      if (oldFolderId !== newFolderId) {
+        newCards = newCards.map(c => c.id === active.id ? { ...c, folder_id: newFolderId } : c);
+      }
+      
+      setCards(newCards);
+
+      // Persist changes
+      // Update specific card folder if changed
+      if (oldFolderId !== newFolderId) {
+        await supabase!.from('cards').update({ folder_id: newFolderId }).eq('id', active.id);
+      }
+
+      // Update all cards in affected folders (or just all for simplicity if small dataset)
+      const updates = newCards.map((c, i) => 
+        supabase!.from('cards').update({ sort_order: i }).eq('id', c.id)
+      );
+      await Promise.all(updates);
+    }
+    
+    fetchCards();
   };
 
   const updateSession = async (updates: Partial<SessionData>) => {
     setActiveSession(prev => prev ? { ...prev, ...updates } : null);
     await supabase!.from('sessions').update(updates).eq('id', session.id);
-  };
-
-  const handleBgUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      try {
-        const fileExt = file.name.split('.').pop();
-        const fileName = `bg_${session.id}_${Date.now()}.${fileExt}`;
-        const { error } = await supabase!.storage.from('images').upload(fileName, file);
-        if (error) throw error;
-        const { data: { publicUrl } } = supabase!.storage.from('images').getPublicUrl(fileName);
-        updateSession({ background_url: publicUrl });
-      } catch (error: any) {
-        alert('배경 업로드 실패: ' + error.message);
-      }
-    }
-  };
-
-  const handleBgRemove = async () => {
-    updateSession({ background_url: null });
   };
 
   const addTimer = () => {
@@ -603,67 +804,166 @@ function DMDashboard({ session, user, onBack, openModal, setActiveSession }: any
     updateSession({ timers: (session.timers || []).filter(t => t.id !== timerId) });
   };
 
+  const handleBgUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      try {
+        const fileExt = file.name.split('.').pop();
+        const fileName = `bg_${session.id}_${Date.now()}.${fileExt}`;
+        const { error } = await supabase!.storage.from('images').upload(fileName, file);
+        if (error) throw error;
+        const { data: { publicUrl } } = supabase!.storage.from('images').getPublicUrl(fileName);
+        updateSession({ background_url: publicUrl });
+      } catch (error: any) { alert('배경 업로드 실패: ' + error.message); }
+    }
+  };
+
   return (
     <div className="main-layout">
       <div className="dashboard" style={{ flex: 1, minWidth: 0, padding: '20px 0', margin: 0 }}>
         <div className="header">
-        <h2 style={{ margin: 0, color: 'var(--text-main)' }}>현재 세션: <span style={{ color: 'var(--accent-primary)' }}>{session.name}</span> <span style={{fontSize:'0.6em', color:'var(--text-muted)'}}>(마스터)</span></h2>
-        <div style={{ display: 'flex', gap: '10px' }}>
-          <button className="btn btn-action" onClick={addTimer}><Timer size={16} style={{verticalAlign:'middle'}}/> 타이머 추가</button>
-          <input type="file" id="bg-upload" accept="image/*" style={{ display: 'none' }} onChange={handleBgUpload} />
-          <label htmlFor="bg-upload" className="btn btn-action" style={{ cursor: 'pointer', padding: '8px 16px', margin: 0 }}><ImageIcon size={16} style={{verticalAlign:'middle'}}/> 배경 설정</label>
-          {session.background_url && <button className="btn btn-danger" onClick={handleBgRemove}>배경 제거</button>}
-          <button className="btn" style={{ background: '#4b5563' }} onClick={onBack}>← 세션 목록으로</button>
-        </div>
-      </div>
-
-      <TimerManager timers={session.timers || []} isDM={true} onUpdate={updateTimer} onDelete={deleteTimer} />
-      <InitiativeTracker sessionId={session.id} isDM={true} />
-
-      <div className="toolbar" style={{ marginBottom: '20px', justifyContent: 'center', background: 'transparent', border: 'none' }}>
-        <button className="btn btn-action" onClick={() => { setShowLoadModal(true); fetchSavedMonsters(); }}><Database size={16} style={{verticalAlign:'middle'}}/> 몬스터 불러오기</button>
-        <button className="btn btn-add" onClick={() => addCard('statblock')}><User size={16} style={{verticalAlign:'middle'}}/> 몬스터/NPC 추가</button>
-        <button className="btn btn-add" onClick={() => addCard('image')}><ImageIcon size={16} style={{verticalAlign:'middle'}}/> 지도/이미지 추가</button>
-        <button className="btn btn-add" onClick={() => addCard('text')}><FileText size={16} style={{verticalAlign:'middle'}}/> 텍스트 노트 추가</button>
-      </div>
-
-      <div className="card-container">
-        {cards.map((card: CardData) => (
-          <DMCard key={card.id} card={card} updateCard={updateCard} deleteCard={deleteCard} openModal={openModal} />
-        ))}
-        {cards.length === 0 && <p style={{ textAlign: 'center', width: '100%', color: 'var(--text-muted)' }}>추가된 카드가 없습니다.</p>}
-      </div>
-
-      {showLoadModal && (
-        <div className="modal-overlay" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.7)', zIndex: 1000, display: 'flex', justifyContent: 'center', alignItems: 'center' }} onClick={() => setShowLoadModal(false)}>
-          <div className="card" style={{ width: '90%', maxWidth: '500px', maxHeight: '80vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
-            <h3 style={{ marginTop: 0, color: 'var(--accent-primary)' }}>저장된 몬스터 불러오기</h3>
-            <p style={{ fontSize: '0.9em', color: 'var(--text-muted)' }}>다른 세션에서 만들었던 몬스터를 복사해옵니다.</p>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '15px' }}>
-              {savedMonsters.map(m => (
-                <div key={m.id} className="init-item" style={{ cursor: 'pointer' }} onClick={() => {
-                  const newCard = {
-                    session_id: session.id, type: 'statblock',
-                    title: m.title, content: m.content, img_src: m.img_src,
-                    is_revealed: false, stats: m.stats
-                  };
-                  supabase!.from('cards').insert([newCard]).then(() => fetchCards());
-                  setShowLoadModal(false);
-                }}>
-                  <div>
-                    <strong>{m.title}</strong>
-                    <div style={{ fontSize: '0.8em', color: 'var(--text-muted)' }}>from {m.session_name}</div>
-                  </div>
-                  <Plus size={16} />
-                </div>
-              ))}
-              {savedMonsters.length === 0 && <p style={{ color: 'var(--text-muted)', textAlign: 'center' }}>저장된 몬스터가 없습니다.</p>}
-            </div>
-            <button className="btn" style={{ width: '100%', marginTop: '20px', background: '#4b5563' }} onClick={() => setShowLoadModal(false)}>닫기</button>
+          <h2 style={{ margin: 0, color: 'var(--text-main)' }}>현재 세션: <span style={{ color: 'var(--accent-primary)' }}>{session.name}</span> <span style={{fontSize:'0.6em', color:'var(--text-muted)'}}>(마스터)</span></h2>
+          <div style={{ display: 'flex', gap: '10px' }}>
+            <button className="btn btn-action" onClick={addTimer}><Timer size={16} style={{verticalAlign:'middle'}}/> 타이머 추가</button>
+            <input type="file" id="bg-upload" accept="image/*" style={{ display: 'none' }} onChange={handleBgUpload} />
+            <label htmlFor="bg-upload" className="btn btn-action" style={{ cursor: 'pointer', padding: '8px 16px', margin: 0 }}><ImageIcon size={16} style={{verticalAlign:'middle'}}/> 배경 설정</label>
+            {session.background_url && <button className="btn btn-danger" onClick={() => updateSession({ background_url: null })}>배경 제거</button>}
+            <button className="btn" style={{ background: '#4b5563' }} onClick={onBack}>← 세션 목록으로</button>
           </div>
         </div>
-      )}
+
+        <TimerManager timers={session.timers || []} isDM={true} onUpdate={updateTimer} onDelete={deleteTimer} />
+        <InitiativeTracker sessionId={session.id} isDM={true} />
+
+        <div className="toolbar" style={{ marginBottom: '30px', justifyContent: 'center', background: 'transparent', border: 'none', gap: '12px' }}>
+          <button className="btn btn-action" style={{background: '#8b5cf6'}} onClick={addFolder}><FolderPlus size={16} style={{verticalAlign:'middle'}}/> 폴더 생성</button>
+          <button className="btn btn-action" onClick={() => { setShowLoadModal(true); fetchSavedMonsters(); }}><Database size={16} style={{verticalAlign:'middle'}}/> 몬스터 불러오기</button>
+          <button className="btn btn-add" onClick={() => addCard('statblock')}><User size={16} style={{verticalAlign:'middle'}}/> 몬스터/NPC 추가</button>
+          <button className="btn btn-add" onClick={() => addCard('image')}><ImageIcon size={16} style={{verticalAlign:'middle'}}/> 지도/이미지 추가</button>
+          <button className="btn btn-add" onClick={() => addCard('text')}><FileText size={16} style={{verticalAlign:'middle'}}/> 텍스트 노트 추가</button>
+        </div>
+
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+          <SortableContext items={folders.map(f => f.id)} strategy={verticalListSortingStrategy}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '40px' }}>
+              {folders.map(folder => (
+                <FolderSection 
+                  key={folder.id} 
+                  folder={folder} 
+                  cards={cards.filter(c => c.folder_id === folder.id)} 
+                  updateCard={updateCard}
+                  deleteCard={deleteCard}
+                  openModal={openModal}
+                  updateFolder={updateFolder}
+                  deleteFolder={deleteFolder}
+                  addCard={addCard}
+                />
+              ))}
+              
+              {/* Uncategorized cards */}
+              <div key="uncategorized" style={{ background: 'rgba(0,0,0,0.02)', padding: '20px', borderRadius: '16px', border: '2px dashed var(--border-color)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '20px' }}>
+                  <Folder size={20} style={{ color: 'var(--text-muted)' }} />
+                  <h3 style={{ margin: 0, fontSize: '1.2em' }}>기타 카드 (분류되지 않음)</h3>
+                </div>
+                <SortableContext items={cards.filter(c => !c.folder_id).map(c => c.id)} strategy={rectSortingStrategy}>
+                  <div className="card-container">
+                    {cards.filter(c => !c.folder_id).map(card => (
+                      <SortableDMCard key={card.id} card={card} updateCard={updateCard} deleteCard={deleteCard} openModal={openModal} />
+                    ))}
+                    {cards.filter(c => !c.folder_id).length === 0 && <p style={{ color: 'var(--text-muted)', textAlign: 'center', width: '100%', padding: '20px' }}>분류되지 않은 카드가 없습니다.</p>}
+                  </div>
+                </SortableContext>
+              </div>
+            </div>
+          </SortableContext>
+        </DndContext>
+
+        {showLoadModal && (
+          <div className="modal-overlay" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.7)', zIndex: 1000, display: 'flex', justifyContent: 'center', alignItems: 'center' }} onClick={() => setShowLoadModal(false)}>
+            <div className="card" style={{ width: '90%', maxWidth: '500px', maxHeight: '80vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
+              <h3 style={{ marginTop: 0, color: 'var(--accent-primary)' }}>저장된 몬스터 불러오기</h3>
+              <p style={{ fontSize: '0.9em', color: 'var(--text-muted)' }}>다른 세션에서 만들었던 몬스터를 복사해옵니다.</p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '15px' }}>
+                {savedMonsters.map(m => (
+                  <div key={m.id} className="init-item" style={{ cursor: 'pointer' }} onClick={() => {
+                    const newCard = {
+                      session_id: session.id, type: 'statblock',
+                      title: m.title, content: m.content, img_src: m.img_src,
+                      is_revealed: false, stats: m.stats, folder_id: null
+                    };
+                    supabase!.from('cards').insert([newCard]).then(() => fetchCards());
+                    setShowLoadModal(false);
+                  }}>
+                    <div>
+                      <strong>{m.title}</strong>
+                      <div style={{ fontSize: '0.8em', color: 'var(--text-muted)' }}>from {m.session_name}</div>
+                    </div>
+                    <Plus size={16} />
+                  </div>
+                ))}
+              </div>
+              <button className="btn" style={{ width: '100%', marginTop: '20px', background: '#4b5563' }} onClick={() => setShowLoadModal(false)}>닫기</button>
+            </div>
+          </div>
+        )}
       </div>
+    </div>
+  );
+}
+
+function FolderSection({ folder, cards, updateCard, deleteCard, openModal, updateFolder, deleteFolder, addCard }: any) {
+  const [isExpanded, setIsExpanded] = useState(true);
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging
+  } = useSortable({ id: folder.id });
+
+  const style = {
+    transform: CSS.Translate.toString(transform),
+    transition,
+    opacity: isDragging ? 0.3 : 1,
+    zIndex: isDragging ? 50 : 'auto',
+  };
+
+  return (
+    <div ref={setNodeRef} style={style} className="folder-section">
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px', background: 'var(--accent-primary)', padding: '12px 20px', borderRadius: '12px', color: 'white', cursor: 'default' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '15px', flex: 1 }}>
+          <div {...attributes} {...listeners} style={{ cursor: 'grab', padding: '4px' }}><GripVertical size={20} /></div>
+          <button onClick={() => setIsExpanded(!isExpanded)} style={{ background: 'transparent', border: 'none', color: 'white', padding: 0, display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
+            {isExpanded ? <ChevronDown size={20} /> : <ChevronRight size={20} />}
+          </button>
+          <Folder size={20} />
+          <input 
+            type="text" 
+            value={folder.name} 
+            onChange={e => updateFolder(folder.id, { name: e.target.value })}
+            style={{ background: 'transparent', border: 'none', color: 'white', fontSize: '1.2em', fontWeight: 'bold', outline: 'none', width: '200px' }}
+          />
+        </div>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <button className="btn" style={{ background: 'rgba(255,255,255,0.2)', padding: '6px 10px', fontSize: '0.8em' }} onClick={() => addCard('statblock', folder.id)}>+ 몬스터</button>
+          <button className="btn" style={{ background: 'rgba(255,255,255,0.2)', padding: '6px 10px', fontSize: '0.8em' }} onClick={() => addCard('image', folder.id)}>+ 이미지</button>
+          <button className="btn" style={{ background: 'rgba(255,255,255,0.2)', padding: '6px 10px', fontSize: '0.8em' }} onClick={() => addCard('text', folder.id)}>+ 텍스트</button>
+          <button className="btn" style={{ background: 'rgba(255,0,0,0.4)', padding: '6px 10px' }} onClick={() => deleteFolder(folder.id)}><Trash2 size={16} /></button>
+        </div>
+      </div>
+
+      {isExpanded && (
+        <SortableContext items={cards.map((c: any) => c.id)} strategy={rectSortingStrategy}>
+          <div className="card-container">
+            {cards.map((card: any) => (
+              <SortableDMCard key={card.id} card={card} updateCard={updateCard} deleteCard={deleteCard} openModal={openModal} />
+            ))}
+            {cards.length === 0 && <p style={{ color: 'var(--text-muted)', textAlign: 'center', width: '100%', padding: '20px', border: '1px dashed var(--border-color)', borderRadius: '12px' }}>이 폴더는 비어있습니다. 카드를 여기로 드래그하거나 추가하세요.</p>}
+          </div>
+        </SortableContext>
+      )}
     </div>
   );
 }
@@ -682,6 +982,19 @@ function DMCard({ card, updateCard, deleteCard, openModal }: any) {
   const [editingMemo, setEditingMemo] = useState<{ id: string, html: string } | null>(null);
   const [tooltipData, setTooltipData] = useState<TooltipData | null>(null);
   const tooltipTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const editorRef = useRef<HTMLDivElement>(null);
+
+  // 한글 입력(IME) 끊김 방지 및 DOM 동기화 문제를 위한 로컬 상태
+  const [localTitle, setLocalTitle] = useState(card.title);
+  const [localStats, setLocalStats] = useState(card.stats || { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 });
+  const [localContent, setLocalContent] = useState(card.content);
+  
+  // Refs to track focused state and previous synced values
+  const titleInputRef = useRef<HTMLInputElement>(null);
+  const statsContainerRef = useRef<HTMLDivElement>(null);
+  const lastSyncedTitle = useRef(card.title);
+  const lastSyncedContent = useRef(card.content);
+  const lastSyncedStats = useRef(card.stats);
 
   const clearTooltipTimeout = () => {
     if (tooltipTimeoutRef.current) {
@@ -697,9 +1010,18 @@ function DMCard({ card, updateCard, deleteCard, openModal }: any) {
       handleEditorMouseOut();
       return;
     }
+    
+    // IF CURRENT TOOLTIP IS PINNED, DO NOT REPLACE IT ON HOVER
+    if (tooltipData?.isPinned) {
+      // If we hover the same pinned trigger, just clear the out-timeout
+      if (tooltipData.el === trigger) {
+        clearTooltipTimeout();
+      }
+      return; 
+    }
+
     clearTooltipTimeout();
     setTooltipData((prev: TooltipData | null) => {
-      if (prev?.isPinned) return prev;
       let content = trigger.getAttribute('data-memo') || '';
       let isEncoded = trigger.hasAttribute('data-memo');
       let icon = undefined;
@@ -718,45 +1040,46 @@ function DMCard({ card, updateCard, deleteCard, openModal }: any) {
         if (isEncoded) {
           try { content = decodeURIComponent(content); } catch(err) {}
         }
-        return { el: trigger, content, stats: localStats, icon, type };
+        return { el: trigger, content, stats: localStats, icon, type, isPinned: prev?.isPinned && prev.el === trigger ? true : false };
       }
       return null;
     });
   };
 
   const handleEditorMouseOut = () => {
+    if (tooltipData?.isPinned) return; // Keep it if pinned
     clearTooltipTimeout();
     tooltipTimeoutRef.current = setTimeout(() => {
       setTooltipData(prev => (prev?.isPinned ? prev : null));
     }, 400);
   };
-  const editorRef = useRef<HTMLDivElement>(null);
-
-  // 한글 입력(IME) 끊김 방지 및 DOM 동기화 문제를 위한 로컬 상태
-  const [localTitle, setLocalTitle] = useState(card.title);
-  const [localStats, setLocalStats] = useState(card.stats || { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 });
-  const [localContent, setLocalContent] = useState(card.content);
-
-  // IME 입력 중인 필드 식별을 위한 ref
-  const titleInputRef = useRef<HTMLInputElement>(null);
-  const statsContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => { 
-    if (document.activeElement !== titleInputRef.current) {
-      setLocalTitle(card.title); 
+    // Only update local state if the server value changed and it's different from our last sync
+    // AND if we are not currently focusing the element
+    if (card.title !== lastSyncedTitle.current) {
+      lastSyncedTitle.current = card.title;
+      if (document.activeElement !== titleInputRef.current) {
+        setLocalTitle(card.title);
+      }
     }
   }, [card.title]);
 
   useEffect(() => { 
-    if (card.stats && !statsContainerRef.current?.contains(document.activeElement)) {
-      setLocalStats(card.stats);
+    if (card.stats && JSON.stringify(card.stats) !== JSON.stringify(lastSyncedStats.current)) {
+      lastSyncedStats.current = card.stats;
+      if (!statsContainerRef.current?.contains(document.activeElement)) {
+        setLocalStats(card.stats);
+      }
     }
   }, [card.stats]);
 
   useEffect(() => { 
-    // 에디터가 포커스 중이 아닐 때만 외부 변경사항 반영
-    if (document.activeElement !== editorRef.current) {
-      setLocalContent(card.content); 
+    if (card.content !== lastSyncedContent.current) {
+      lastSyncedContent.current = card.content;
+      if (document.activeElement !== editorRef.current) {
+        setLocalContent(card.content); 
+      }
     }
   }, [card.content]);
 
@@ -799,6 +1122,7 @@ function DMCard({ card, updateCard, deleteCard, openModal }: any) {
     const trigger = target.closest('.keyword-memo') as HTMLElement;
     
     if (trigger) {
+      clearTooltipTimeout();
       setTooltipData(prev => {
         // Toggle pin if clicking the same trigger
         if (prev && prev.el === trigger) return { ...prev, isPinned: !prev.isPinned };
@@ -914,7 +1238,7 @@ function DMCard({ card, updateCard, deleteCard, openModal }: any) {
               <img src={card.img_src} alt="" style={{ width: '100%', height: 'auto', borderRadius: '8px', maxHeight: '160px', objectFit: 'cover' }} />
             </div>
           )}
-          {card.type === 'statblock' && card.hp !== undefined && (
+          {card.type === 'statblock' && (
             <div style={{ pointerEvents: 'auto' }} onClick={e => e.stopPropagation()}>
               <HPBar current={card.hp ?? 10} max={card.max_hp ?? 10} temp={card.temp_hp ?? 0} isDM={true} onUpdate={(u) => updateCard(card.id, u)} />
             </div>
@@ -988,9 +1312,9 @@ function DMCard({ card, updateCard, deleteCard, openModal }: any) {
                     </div>
                   )}
 
-                  {card.reveal_mode === 'full' && card.type === 'statblock' && card.hp !== undefined && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-                      <span style={{ color: 'var(--text-muted)', width: '80px', fontWeight: 'bold' }}>HP 표시:</span>
+              {card.reveal_mode === 'full' && card.type === 'statblock' && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+                  <span style={{ color: 'var(--text-muted)', width: '80px', fontWeight: 'bold' }}>HP 표시:</span>
                       <label style={{ display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer' }}>
                         <input type="radio" checked={!localStats.hide_hp && !localStats.hide_hp_text} onChange={() => updateCard(card.id, { stats: { ...localStats, hide_hp: false, hide_hp_text: false }})} /> 수치+바(Bar)
                       </label>
@@ -1017,7 +1341,7 @@ function DMCard({ card, updateCard, deleteCard, openModal }: any) {
                 </div>
               </div>
 
-              {card.type === 'statblock' && card.hp !== undefined && (
+              {card.type === 'statblock' && (
                 <div style={{ marginBottom: '25px' }}>
                   <HPBar current={card.hp ?? 10} max={card.max_hp ?? 10} temp={card.temp_hp ?? 0} isDM={true} onUpdate={(u) => updateCard(card.id, u)} />
                 </div>
@@ -1126,11 +1450,15 @@ function DMCard({ card, updateCard, deleteCard, openModal }: any) {
             data={tooltipData} 
             onMouseEnter={clearTooltipTimeout}
             onMouseLeave={() => {
+              clearTooltipTimeout();
               tooltipTimeoutRef.current = setTimeout(() => {
                 setTooltipData(prev => (prev?.isPinned ? prev : null));
               }, 400);
             }}
-            onClose={() => setTooltipData(null)}
+            onClose={() => {
+              clearTooltipTimeout();
+              setTooltipData(null);
+            }}
             onPinToggle={() => setTooltipData(prev => prev ? { ...prev, isPinned: !prev.isPinned } : null)}
             isEditable={!isPreviewMode}
             onEdit={() => {
@@ -1157,7 +1485,7 @@ function DMCard({ card, updateCard, deleteCard, openModal }: any) {
   );
 }
 
-function PlayerCard({ card, openModal, handleEditorMouseOver, handleEditorMouseOut, setTooltipData }: any) {
+function PlayerCard({ card, openModal, handleEditorMouseOver, handleEditorMouseOut, clearTooltipTimeout, setTooltipData }: any) {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const mode = card.reveal_mode || (card.is_revealed ? 'full' : 'hidden');
   const cardStats = card.stats || { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 };
@@ -1257,6 +1585,7 @@ function PlayerCard({ card, openModal, handleEditorMouseOver, handleEditorMouseO
                         const target = e.target as HTMLElement;
                         const trigger = target.closest('.keyword-memo') as HTMLElement;
                         if (trigger) {
+                          if (clearTooltipTimeout) clearTooltipTimeout();
                           setTooltipData((prev: any) => {
                             if (prev && prev.el === trigger) return { ...prev, isPinned: !prev.isPinned };
                             
@@ -1327,9 +1656,17 @@ function PlayerDashboard({ session, user, onBack, openModal }: any) {
       handleEditorMouseOut();
       return;
     }
+    
+    // IF CURRENT TOOLTIP IS PINNED, DO NOT REPLACE IT ON HOVER
+    if (tooltipData?.isPinned) {
+      if (tooltipData.el === trigger) {
+        clearTooltipTimeout();
+      }
+      return; 
+    }
+
     clearTooltipTimeout();
     setTooltipData((prev: TooltipData | null) => {
-      if (prev?.isPinned) return prev;
       let content = trigger.getAttribute('data-memo') || '';
       let isEncoded = trigger.hasAttribute('data-memo');
       let icon = undefined;
@@ -1428,6 +1765,7 @@ function PlayerDashboard({ session, user, onBack, openModal }: any) {
     const trigger = target.closest('.keyword-memo') as HTMLElement;
     
     if (trigger) {
+      clearTooltipTimeout();
       setTooltipData(prev => {
         // Toggle pin if clicking the same trigger
         if (prev && prev.el === trigger) return { ...prev, isPinned: !prev.isPinned };
@@ -1530,7 +1868,7 @@ function PlayerDashboard({ session, user, onBack, openModal }: any) {
         <div className="card-container" style={{ flex: '1 1 500px', display: 'flex', flexDirection: 'column' }}>
           <h3 style={{ width: '100%', color: 'var(--accent-primary)', borderBottom: '1px solid var(--border-color)', paddingBottom: '10px', marginBottom: '20px' }}>공유된 정보</h3>
           {cards.map((card: CardData) => (
-            <PlayerCard key={card.id} card={card} openModal={openModal} handleEditorMouseOver={handleEditorMouseOver} handleEditorMouseOut={handleEditorMouseOut} setTooltipData={setTooltipData} />
+            <PlayerCard key={card.id} card={card} openModal={openModal} handleEditorMouseOver={handleEditorMouseOver} handleEditorMouseOut={handleEditorMouseOut} clearTooltipTimeout={clearTooltipTimeout} setTooltipData={setTooltipData} />
           ))}
         </div>
 
