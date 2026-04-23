@@ -565,6 +565,7 @@ function DMDashboard({ session, user, onBack, openModal, setActiveSession }: any
   const [cards, setCards] = useState<CardData[]>([]);
   const [folders, setFolders] = useState<FolderData[]>([]);
   const [showLoadModal, setShowLoadModal] = useState(false);
+  const [isListMode, setIsListMode] = useState(false);
   const [savedMonsters, setSavedMonsters] = useState<any[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
 
@@ -888,8 +889,15 @@ function DMDashboard({ session, user, onBack, openModal, setActiveSession }: any
 
         <div className="toolbar" style={{ marginBottom: '30px', justifyContent: 'center', background: 'transparent', border: 'none', gap: '12px' }}>
           <button className="btn btn-action" style={{background: '#8b5cf6'}} onClick={addFolder}><FolderPlus size={16} style={{verticalAlign:'middle'}}/> 폴더 생성</button>
-          <div style={{ color: 'var(--text-muted)', fontSize: '0.8em', display: 'flex', alignItems: 'center' }}>
-            폴더: {folders.length}개 / 카드: {cards.length}개
+          <div style={{ color: 'var(--text-muted)', fontSize: '0.8em', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span>폴더: {folders.length}개 / 카드: {cards.length}개</span>
+            <button 
+              className="btn" 
+              onClick={() => setIsListMode(!isListMode)} 
+              style={{ padding: '4px 8px', background: 'var(--stat-bg)', color: 'var(--text-main)', border: '1px solid var(--border-color)', fontSize: '0.9em' }}
+            >
+              {isListMode ? '그리드 보기' : '한 줄로 보기'}
+            </button>
           </div>
           <button className="btn btn-action" onClick={() => { setShowLoadModal(true); fetchSavedMonsters(); }}><Database size={16} style={{verticalAlign:'middle'}}/> 몬스터 불러오기</button>
           <button className="btn btn-add" onClick={() => addCard('statblock')}><User size={16} style={{verticalAlign:'middle'}}/> 몬스터/NPC 추가</button>
@@ -911,6 +919,7 @@ function DMDashboard({ session, user, onBack, openModal, setActiveSession }: any
                   updateFolder={updateFolder}
                   deleteFolder={deleteFolder}
                   addCard={addCard}
+                  isListMode={isListMode}
                 />
               ))}
               
@@ -921,7 +930,7 @@ function DMDashboard({ session, user, onBack, openModal, setActiveSession }: any
                   <h3 style={{ margin: 0, fontSize: '1.2em' }}>기타 카드 (분류되지 않음)</h3>
                 </div>
                 <SortableContext items={cards.filter(c => !c.folder_id).map(c => c.id)} strategy={rectSortingStrategy}>
-                  <div className="card-container">
+                  <div className="card-container" style={isListMode ? { gridTemplateColumns: '1fr' } : {}}>
                     {cards.filter(c => !c.folder_id).map(card => (
                       <SortableDMCard key={card.id} card={card} updateCard={updateCard} deleteCard={deleteCard} openModal={openModal} />
                     ))}
@@ -966,8 +975,8 @@ function DMDashboard({ session, user, onBack, openModal, setActiveSession }: any
   );
 }
 
-function FolderSection({ folder, cards, updateCard, deleteCard, openModal, updateFolder, deleteFolder, addCard }: any) {
-  const [isExpanded, setIsExpanded] = useState(true);
+function FolderSection({ folder, cards, updateCard, deleteCard, openModal, updateFolder, deleteFolder, addCard, isListMode }: any) {
+  const [isExpanded, setIsExpanded] = useState(false);
   const {
     attributes,
     listeners,
@@ -1010,7 +1019,7 @@ function FolderSection({ folder, cards, updateCard, deleteCard, openModal, updat
 
       {isExpanded && (
         <SortableContext items={cards.map((c: any) => c.id)} strategy={rectSortingStrategy}>
-          <div className="card-container">
+          <div className="card-container" style={isListMode ? { gridTemplateColumns: '1fr' } : {}}>
             {cards.map((card: any) => (
               <SortableDMCard key={card.id} card={card} updateCard={updateCard} deleteCard={deleteCard} openModal={openModal} />
             ))}
