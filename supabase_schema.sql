@@ -11,16 +11,31 @@ CREATE TABLE public.sessions (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
+-- 1-5. Folders Table (몬스터/노트 폴더)
+CREATE TABLE public.folders (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    session_id UUID REFERENCES public.sessions(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    sort_order INTEGER DEFAULT 0,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
 -- 2. Cards Table (몬스터, NPC, 이미지, 텍스트 노트)
 CREATE TABLE public.cards (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     session_id UUID REFERENCES public.sessions(id) ON DELETE CASCADE,
+    folder_id UUID REFERENCES public.folders(id) ON DELETE SET NULL,
     type TEXT NOT NULL,
     title TEXT NOT NULL,
     content TEXT,
     img_src TEXT,
     is_revealed BOOLEAN DEFAULT FALSE,
+    reveal_mode TEXT DEFAULT 'hidden',
     stats JSONB DEFAULT '{"str": 10, "dex": 10, "con": 10, "int": 10, "wis": 10, "cha": 10}'::jsonb,
+    hp INTEGER,
+    max_hp INTEGER,
+    temp_hp INTEGER,
+    sort_order INTEGER DEFAULT 0,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
@@ -58,7 +73,30 @@ INSERT INTO public.wikis (content) VALUES ('여기에 캠페인 전반의 세계
 -- 프로토타입을 위한 RLS(Row Level Security) 비활성화
 -- (실제 서비스 배포 시에는 RLS를 활성화하고 적절한 정책을 설정해야 합니다)
 ALTER TABLE public.sessions DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.folders DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.cards DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.player_sheets DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.wikis DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.initiatives DISABLE ROW LEVEL SECURITY;
+
+-- -----------------------------------------------------------------------------
+-- [업데이트 마이그레이션 안내]
+-- 만약 이전에 앱을 설치하셨다면 기존 데이터를 보존하기 위해 새 테이블을 지우고 다시 만들지 마시고, 
+-- 아래 SQL을 통해 필요한 컬럼만 추가/생성하여 오류를 해결하세요.
+-- 
+-- CREATE TABLE IF NOT EXISTS public.folders (
+--     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+--     session_id UUID REFERENCES public.sessions(id) ON DELETE CASCADE,
+--     name TEXT NOT NULL,
+--     sort_order INTEGER DEFAULT 0,
+--     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+-- );
+-- ALTER TABLE public.folders DISABLE ROW LEVEL SECURITY;
+-- 
+-- ALTER TABLE public.cards ADD COLUMN IF NOT EXISTS folder_id UUID REFERENCES public.folders(id) ON DELETE SET NULL;
+-- ALTER TABLE public.cards ADD COLUMN IF NOT EXISTS sort_order INTEGER DEFAULT 0;
+-- ALTER TABLE public.cards ADD COLUMN IF NOT EXISTS reveal_mode TEXT DEFAULT 'hidden';
+-- ALTER TABLE public.cards ADD COLUMN IF NOT EXISTS hp INTEGER;
+-- ALTER TABLE public.cards ADD COLUMN IF NOT EXISTS max_hp INTEGER;
+-- ALTER TABLE public.cards ADD COLUMN IF NOT EXISTS temp_hp INTEGER;
+-- -----------------------------------------------------------------------------

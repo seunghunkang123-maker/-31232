@@ -574,19 +574,35 @@ function DMDashboard({ session, user, onBack, openModal, setActiveSession }: any
   );
 
   const fetchCards = async () => {
-    const { data } = await supabase!.from('cards')
+    const { data, error } = await supabase!.from('cards')
       .select('*')
       .eq('session_id', session.id)
       .order('sort_order', { ascending: true })
       .order('created_at', { ascending: true });
+      
+    if (error && error.message.includes('column "sort_order" does not exist')) {
+      alert('데이터베이스 스키마가 업데이트되지 않아 오류가 발생했습니다.\n\nsupabase_schema.sql 파일의 안내에 따라 SQL을 실행하여 테이블 및 컬럼을 업데이트해주세요.');
+      // 임시 폴백으로 에러 없이 카드라도 불러오기
+      const fallback = await supabase!.from('cards').select('*').eq('session_id', session.id);
+      if (fallback.data) {
+        setCards(fallback.data.map(c => ({...c, folder_id: null, sort_order: 0, hp: 10, max_hp: 10, temp_hp: 0, reveal_mode: 'hidden'})));
+      }
+      return;
+    }
+
     if (data) setCards(data);
   };
 
   const fetchFolders = async () => {
-    const { data } = await supabase!.from('folders')
+    const { data, error } = await supabase!.from('folders')
       .select('*')
       .eq('session_id', session.id)
       .order('sort_order', { ascending: true });
+      
+    if (error && error.message.includes('relation "public.folders" does not exist')) {
+      // alert already shown by fetchCards if missing
+      return;
+    }
     if (data) setFolders(data || []);
   };
 
@@ -724,11 +740,11 @@ function DMDashboard({ session, user, onBack, openModal, setActiveSession }: any
     if (activeFolder && overFolder) {
       const oldIndex = folders.indexOf(activeFolder);
       const newIndex = folders.indexOf(overFolder);
-      const newFolders = arrayMove(folders, oldIndex, newIndex);
+      const newFolders = arrayMove(folders, oldIndex, newIndex) as FolderData[];
       setFolders(newFolders);
       
       // Update all folders order
-      const updates = newFolders.map((f, i) => 
+      const updates = newFolders.map((f: FolderData, i: number) => 
         supabase!.from('folders').update({ sort_order: i }).eq('id', f.id)
       );
       await Promise.all(updates);
@@ -747,9 +763,9 @@ function DMDashboard({ session, user, onBack, openModal, setActiveSession }: any
       const oldFolderId = activeCard.folder_id;
       const newFolderId = overCard.folder_id;
 
-      let newCards = arrayMove(cards, oldIndex, newIndex);
+      let newCards = arrayMove(cards, oldIndex, newIndex) as CardData[];
       if (oldFolderId !== newFolderId) {
-        newCards = newCards.map(c => c.id === active.id ? { ...c, folder_id: newFolderId } : c);
+        newCards = newCards.map((c: CardData) => c.id === active.id ? { ...c, folder_id: newFolderId } : c);
       }
       
       setCards(newCards);
@@ -761,11 +777,12 @@ function DMDashboard({ session, user, onBack, openModal, setActiveSession }: any
       }
 
       // Update all cards in affected folders (or just all for simplicity if small dataset)
-      const updates = newCards.map((c, i) => 
+      const updates = newCards.map((c: CardData, i: number) => 
         supabase!.from('cards').update({ sort_order: i }).eq('id', c.id)
       );
       await Promise.all(updates);
     }
+
     
     fetchCards();
   };
