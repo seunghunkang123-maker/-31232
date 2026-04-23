@@ -49,7 +49,7 @@ export function ParsedText({ text, stats }: { text: string, stats: any }) {
         parts.push(
           <span 
             key={`kw-${keyCounter++}`} 
-            className="keyword-memo text-amber-400 underline decoration-dashed underline-offset-4 cursor-pointer hover:text-amber-300 transition-colors font-bold inline"
+            className="keyword-memo text-blue-600 underline decoration-blue-300 decoration-dotted underline-offset-4 cursor-pointer hover:bg-blue-50 hover:text-blue-800 transition-all font-bold inline px-0.5 rounded-sm"
             data-memo={encodeURIComponent(desc)}
           >
             <span className="mr-1 inline-block select-none">📌</span>
@@ -61,7 +61,7 @@ export function ParsedText({ text, stats }: { text: string, stats: any }) {
         parts.push(
           <span 
             key={`kw-${keyCounter++}`} 
-            className="keyword-memo text-amber-400 underline decoration-dashed underline-offset-4 cursor-pointer hover:text-amber-300 transition-colors font-bold inline"
+            className="keyword-memo text-blue-600 underline decoration-blue-300 decoration-dotted underline-offset-4 cursor-pointer hover:bg-blue-50 hover:text-blue-800 transition-all font-bold inline px-0.5 rounded-sm"
             data-keyword={content}
           >
             {dictData.icon && <span className="mr-1 inline-block select-none">{dictData.icon}</span>}
@@ -71,7 +71,7 @@ export function ParsedText({ text, stats }: { text: string, stats: any }) {
       } else {
         const evaluated = evaluateExpression(content, stats);
         if (evaluated !== content) {
-          parts.push(<span key={`stat-${keyCounter++}`} className="text-emerald-400 font-bold bg-emerald-400/10 px-1 rounded">{evaluated}</span>);
+          parts.push(<span key={`stat-${keyCounter++}`} className="text-emerald-700 font-bold bg-emerald-100 px-1 rounded">{evaluated}</span>);
         } else {
           parts.push(`[${content}]`);
         }
@@ -93,7 +93,7 @@ export function ParsedText({ text, stats }: { text: string, stats: any }) {
         const hasMemoAttr = 'data-memo' in attribs;
         
         if (isKeywordMemo || hasMemoAttr) {
-          const newClassName = `${className} text-amber-400 underline decoration-dashed underline-offset-4 cursor-pointer hover:text-amber-300 transition-colors font-bold inline`.trim();
+          const newClassName = `${className} text-blue-600 underline decoration-blue-300 decoration-dotted underline-offset-4 cursor-pointer hover:bg-blue-50 hover:text-blue-800 transition-all font-bold inline px-0.5 rounded-sm`.trim();
           
           const props: any = { className: newClassName };
           if (attribs['data-memo']) props['data-memo'] = attribs['data-memo'];
