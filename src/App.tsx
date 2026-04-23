@@ -907,6 +907,18 @@ function DMCard({ card, updateCard, deleteCard, openModal }: any) {
                   </label>
                 </div>
               )}
+
+              {card.reveal_mode === 'full' && card.type === 'statblock' && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '15px', marginTop: '10px' }}>
+                  <span style={{ color: 'var(--text-muted)', width: '80px' }}>스탯 표시:</span>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer' }}>
+                    <input type="radio" checked={!card.stats?.hide_stats} onChange={() => updateCard(card.id, { stats: { ...card.stats, hide_stats: false }})} /> 공개
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer' }}>
+                    <input type="radio" checked={card.stats?.hide_stats} onChange={() => updateCard(card.id, { stats: { ...card.stats, hide_stats: true }})} /> 숨김 (???)
+                  </label>
+                </div>
+              )}
             </div>
           </div>
 
@@ -999,10 +1011,21 @@ function DMCard({ card, updateCard, deleteCard, openModal }: any) {
         onMouseEnter={clearTooltipTimeout}
         onMouseLeave={() => {
           tooltipTimeoutRef.current = setTimeout(() => {
-            setTooltipData(null);
+            setTooltipData(prev => (prev?.isPinned ? prev : null));
           }, 300);
         }}
         onClose={() => setTooltipData(null)}
+        onPinToggle={() => setTooltipData(prev => prev ? { ...prev, isPinned: !prev.isPinned } : null)}
+        isEditable={!isPreviewMode}
+        onEdit={() => {
+          if (!tooltipData || isPreviewMode) return;
+          const trigger = tooltipData.el;
+          let currentMemo = trigger.getAttribute('data-memo') || '';
+          try { currentMemo = decodeURIComponent(currentMemo); } catch (e) {}
+          if (!trigger.id) trigger.id = 'memo-' + Date.now();
+          setEditingMemo({ id: trigger.id, html: currentMemo });
+          setTooltipData(null);
+        }}
       />
       {editingMemo && (
         <TooltipEditorModal
@@ -1255,7 +1278,9 @@ function PlayerDashboard({ session, user, onBack, openModal }: any) {
                           {(['str', 'dex', 'con', 'int', 'wis', 'cha'] as const).map(stat => (
                             <div className="stat-box" key={stat}>
                               <span className="stat-name">{stat.toUpperCase()}</span>
-                              <span className="stat-val">{card.stats[stat]} ({getModifier(card.stats[stat])})</span>
+                              <span className="stat-val">
+                                {card.stats?.hide_stats ? '???' : `${card.stats[stat]} (${getModifier(card.stats[stat])})`}
+                              </span>
                             </div>
                           ))}
                         </div>
@@ -1379,6 +1404,16 @@ function PlayerDashboard({ session, user, onBack, openModal }: any) {
         }}
         onClose={() => setTooltipData(null)}
         onPinToggle={() => setTooltipData(prev => prev ? { ...prev, isPinned: !prev.isPinned } : null)}
+        isEditable={!isPreviewMode}
+        onEdit={() => {
+          if (!tooltipData || isPreviewMode) return;
+          const trigger = tooltipData.el;
+          let currentMemo = trigger.getAttribute('data-memo') || '';
+          try { currentMemo = decodeURIComponent(currentMemo); } catch (e) {}
+          if (!trigger.id) trigger.id = 'memo-' + Date.now();
+          setEditingMemo({ id: trigger.id, html: currentMemo });
+          setTooltipData(null);
+        }}
       />
 
       {showLoadModal && (

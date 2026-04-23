@@ -2,7 +2,7 @@ import React, { useEffect } from 'react';
 import { FloatingPortal } from '@floating-ui/react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ParsedText } from './ParsedText';
-import { X, Pin } from 'lucide-react';
+import { X, Pin, Edit2 } from 'lucide-react';
 
 export type TooltipData = {
   el: HTMLElement;
@@ -13,7 +13,7 @@ export type TooltipData = {
   isPinned?: boolean;
 };
 
-export function GlobalTooltip({ data, onMouseEnter, onMouseLeave, onClose, onPinToggle }: { data: TooltipData | null, onMouseEnter?: () => void, onMouseLeave?: () => void, onClose?: () => void, onPinToggle?: () => void }) {
+export function GlobalTooltip({ data, onMouseEnter, onMouseLeave, onClose, onPinToggle, onEdit, isEditable }: { data: TooltipData | null, onMouseEnter?: () => void, onMouseLeave?: () => void, onClose?: () => void, onPinToggle?: () => void, onEdit?: () => void, isEditable?: boolean }) {
   // Handle click outside to close on mobile
   useEffect(() => {
     if (!data || !onClose) return;
@@ -26,7 +26,8 @@ export function GlobalTooltip({ data, onMouseEnter, onMouseLeave, onClose, onPin
         tooltipEl && 
         !tooltipEl.contains(target) &&
         data.el &&
-        !data.el.contains(target)
+        !data.el.contains(target) &&
+        !(target as HTMLElement).closest('.modal-overlay') // ignore clicks inside modal
       ) {
         onClose();
       }
@@ -56,6 +57,20 @@ export function GlobalTooltip({ data, onMouseEnter, onMouseLeave, onClose, onPin
             className="fixed z-[10000] sm:right-6 sm:top-24 bottom-6 right-1/2 translate-x-1/2 sm:translate-x-0 w-[90vw] sm:w-[350px] bg-white text-gray-900 p-5 rounded-2xl shadow-2xl border border-gray-200 text-sm leading-relaxed ring-1 ring-black/5"
           >
             <div className="absolute top-3 right-3 flex gap-2">
+              {onEdit && data.type !== 'system' && (
+                <button 
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (isEditable) onEdit();
+                    else alert('✏️ 편집 모드로 먼저 전환해야 툴팁을 수정할 수 있습니다.');
+                  }}
+                  className={`p-1.5 rounded-full transition-colors ${isEditable ? 'bg-gray-100 text-gray-400 hover:text-blue-600 hover:bg-blue-50' : 'bg-gray-50 text-gray-300 cursor-not-allowed'}`}
+                  aria-label="Edit tooltip"
+                  title={isEditable ? "툴팁 내용 수정" : "편집 모드에서 수정 가능"}
+                >
+                  <Edit2 size={14} strokeWidth={3} />
+                </button>
+              )}
               {onPinToggle && (
                 <button 
                   onClick={(e) => {
@@ -82,7 +97,7 @@ export function GlobalTooltip({ data, onMouseEnter, onMouseLeave, onClose, onPin
                 </button>
               )}
             </div>
-            <div className="font-bold text-gray-900 mb-3 flex items-center gap-2 text-base border-b border-gray-200 pb-2 flex-wrap pr-16 bg-white shrink-0">
+            <div className="font-bold text-gray-900 mb-3 flex items-center gap-2 text-base border-b border-gray-200 pb-2 flex-wrap pr-24 bg-white shrink-0">
               {data.icon && <span className="text-lg">{data.icon}</span>}
               <span className="tracking-tight">{data.el.textContent?.replace('📌', '').trim()}</span>
             </div>
