@@ -517,7 +517,7 @@ function SessionLobby({ user, onSelect }: any) {
 }
 
 // --- DM Dashboard Helpers ---
-function SortableDMCard({ card, updateCard, deleteCard, openModal }: any) {
+function SortableDMCard({ card, updateCard, deleteCard, openModal, isListMode }: any) {
   const {
     attributes,
     listeners,
@@ -541,20 +541,23 @@ function SortableDMCard({ card, updateCard, deleteCard, openModal }: any) {
         {...attributes} 
         {...listeners} 
         style={{ 
-          position: 'absolute', top: '24px', left: '10px', zIndex: 20, 
+          position: 'absolute', top: isListMode ? '50%' : '24px', left: isListMode ? '8px' : '10px', 
+          transform: isListMode ? 'translateY(-50%)' : 'none',
+          zIndex: 20, 
           cursor: 'grab', color: 'var(--text-muted)',
           padding: '4px', background: 'var(--card-bg)', borderRadius: '4px',
           border: '1px solid var(--border-color)', display: 'flex', alignItems: 'center'
         }}
         title="드래그하여 이동"
       >
-        <GripVertical size={16} />
+        <GripVertical size={isListMode ? 14 : 16} />
       </div>
       <DMCard 
         card={card} 
         updateCard={updateCard} 
         deleteCard={deleteCard} 
         openModal={openModal}
+        isListMode={isListMode}
       />
     </div>
   );
@@ -873,36 +876,35 @@ function DMDashboard({ session, user, onBack, openModal, setActiveSession }: any
   return (
     <div className="main-layout">
       <div className="dashboard" style={{ flex: 1, minWidth: 0, padding: '20px 0', margin: 0 }}>
-        <div className="header">
-          <h2 style={{ margin: 0, color: 'var(--text-main)' }}>현재 세션: <span style={{ color: 'var(--accent-primary)' }}>{session.name}</span> <span style={{fontSize:'0.6em', color:'var(--text-muted)'}}>(마스터)</span></h2>
-          <div style={{ display: 'flex', gap: '10px' }}>
-            <button className="btn btn-action" onClick={addTimer}><Timer size={16} style={{verticalAlign:'middle'}}/> 타이머 추가</button>
+        <div className="header" style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+          <h2 style={{ margin: 0, color: 'var(--text-main)', fontSize: 'clamp(1.1em, 2vw, 1.5em)' }}>현재 세션: <span style={{ color: 'var(--accent-primary)' }}>{session.name}</span> <span style={{fontSize:'0.6em', color:'var(--text-muted)'}}>(마스터)</span></h2>
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+            <button className="btn btn-action" onClick={addTimer} style={{ padding: '6px 12px', fontSize: '0.85em' }}><Timer size={14} style={{verticalAlign:'middle'}}/> <span className="hidden sm:inline">타이머 추가</span></button>
             <input type="file" id="bg-upload" accept="image/*" style={{ display: 'none' }} onChange={handleBgUpload} />
-            <label htmlFor="bg-upload" className="btn btn-action" style={{ cursor: 'pointer', padding: '8px 16px', margin: 0 }}><ImageIcon size={16} style={{verticalAlign:'middle'}}/> 배경 설정</label>
-            {session.background_url && <button className="btn btn-danger" onClick={() => updateSession({ background_url: null })}>배경 제거</button>}
-            <button className="btn" style={{ background: '#4b5563' }} onClick={onBack}>← 세션 목록으로</button>
+            <label htmlFor="bg-upload" className="btn btn-action" style={{ cursor: 'pointer', padding: '6px 12px', margin: 0, fontSize: '0.85em' }}><ImageIcon size={14} style={{verticalAlign:'middle'}}/> <span className="hidden sm:inline">배경 설정</span></label>
+            <button className="btn" style={{ background: '#4b5563', padding: '6px 12px', fontSize: '0.85em' }} onClick={onBack}>← <span className="hidden sm:inline">목록</span></button>
           </div>
         </div>
 
         <TimerManager timers={session.timers || []} isDM={true} onUpdate={updateTimer} onDelete={deleteTimer} />
         <InitiativeTracker sessionId={session.id} isDM={true} />
 
-        <div className="toolbar" style={{ marginBottom: '30px', justifyContent: 'center', background: 'transparent', border: 'none', gap: '12px' }}>
-          <button className="btn btn-action" style={{background: '#8b5cf6'}} onClick={addFolder}><FolderPlus size={16} style={{verticalAlign:'middle'}}/> 폴더 생성</button>
-          <div style={{ color: 'var(--text-muted)', fontSize: '0.8em', display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span>폴더: {folders.length}개 / 카드: {cards.length}개</span>
+        <div className="toolbar" style={{ marginBottom: '30px', justifyContent: 'center', background: 'transparent', border: 'none', gap: '8px', flexWrap: 'wrap' }}>
+          <button className="btn btn-action" style={{background: '#8b5cf6', padding: '8px 12px'}} onClick={addFolder}><FolderPlus size={16} style={{verticalAlign:'middle'}}/> <span className="text-sm">폴더 생성</span></button>
+          <div style={{ color: 'var(--text-muted)', fontSize: '0.8em', display: 'flex', alignItems: 'center', gap: '8px', background: 'var(--card-bg)', padding: '4px 10px', borderRadius: '20px', border: '1px solid var(--border-color)' }}>
+            <span>F {folders.length} / C {cards.length}</span>
             <button 
               className="btn" 
               onClick={() => setIsListMode(!isListMode)} 
-              style={{ padding: '4px 8px', background: 'var(--stat-bg)', color: 'var(--text-main)', border: '1px solid var(--border-color)', fontSize: '0.9em' }}
+              style={{ padding: '2px 8px', background: 'var(--accent-primary)', color: '#fff', border: 'none', fontSize: '0.9em', borderRadius: '15px' }}
             >
-              {isListMode ? '그리드 보기' : '한 줄로 보기'}
+              {isListMode ? '그리드' : '리스트'}
             </button>
           </div>
-          <button className="btn btn-action" onClick={() => { setShowLoadModal(true); fetchSavedMonsters(); }}><Database size={16} style={{verticalAlign:'middle'}}/> 몬스터 불러오기</button>
-          <button className="btn btn-add" onClick={() => addCard('statblock')}><User size={16} style={{verticalAlign:'middle'}}/> 몬스터/NPC 추가</button>
-          <button className="btn btn-add" onClick={() => addCard('image')}><ImageIcon size={16} style={{verticalAlign:'middle'}}/> 지도/이미지 추가</button>
-          <button className="btn btn-add" onClick={() => addCard('text')}><FileText size={16} style={{verticalAlign:'middle'}}/> 텍스트 노트 추가</button>
+          <button className="btn btn-action" onClick={() => { setShowLoadModal(true); fetchSavedMonsters(); }} style={{padding: '8px 12px'}}><Database size={16} style={{verticalAlign:'middle'}}/> <span className="text-sm">불러오기</span></button>
+          <button className="btn btn-add" onClick={() => addCard('statblock')} style={{padding: '8px 12px'}}><User size={16} style={{verticalAlign:'middle'}}/> <span className="text-sm">+몬스터</span></button>
+          <button className="btn btn-add" onClick={() => addCard('image')} style={{padding: '8px 12px'}}><ImageIcon size={16} style={{verticalAlign:'middle'}}/> <span className="text-sm">+이미지</span></button>
+          <button className="btn btn-add" onClick={() => addCard('text')} style={{padding: '8px 12px'}}><FileText size={16} style={{verticalAlign:'middle'}}/> <span className="text-sm">+메모</span></button>
         </div>
 
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
@@ -930,9 +932,9 @@ function DMDashboard({ session, user, onBack, openModal, setActiveSession }: any
                   <h3 style={{ margin: 0, fontSize: '1.2em' }}>기타 카드 (분류되지 않음)</h3>
                 </div>
                 <SortableContext items={cards.filter(c => !c.folder_id).map(c => c.id)} strategy={rectSortingStrategy}>
-                  <div className="card-container" style={isListMode ? { gridTemplateColumns: '1fr' } : {}}>
+                  <div className="card-container" style={isListMode ? { gridTemplateColumns: '1fr', gap: '8px' } : {}}>
                     {cards.filter(c => !c.folder_id).map(card => (
-                      <SortableDMCard key={card.id} card={card} updateCard={updateCard} deleteCard={deleteCard} openModal={openModal} />
+                      <SortableDMCard key={card.id} card={card} updateCard={updateCard} deleteCard={deleteCard} openModal={openModal} isListMode={isListMode} />
                     ))}
                     {cards.filter(c => !c.folder_id).length === 0 && <p style={{ color: 'var(--text-muted)', textAlign: 'center', width: '100%', padding: '20px' }}>분류되지 않은 카드가 없습니다.</p>}
                   </div>
@@ -1017,11 +1019,13 @@ function FolderSection({ folder, cards, updateCard, deleteCard, openModal, updat
         </div>
       </div>
 
-      {isExpanded && (
+              {isExpanded && (
         <SortableContext items={cards.map((c: any) => c.id)} strategy={rectSortingStrategy}>
-          <div className="card-container" style={isListMode ? { gridTemplateColumns: '1fr' } : {}}>
+          <div className="card-container" style={{ 
+            ...(isListMode ? { gridTemplateColumns: '1fr', gap: '8px' } : {}),
+          }}>
             {cards.map((card: any) => (
-              <SortableDMCard key={card.id} card={card} updateCard={updateCard} deleteCard={deleteCard} openModal={openModal} />
+              <SortableDMCard key={card.id} card={card} updateCard={updateCard} deleteCard={deleteCard} openModal={openModal} isListMode={isListMode} />
             ))}
             {cards.length === 0 && <p style={{ color: 'var(--text-muted)', textAlign: 'center', width: '100%', padding: '20px', border: '1px dashed var(--border-color)', borderRadius: '12px' }}>이 폴더는 비어있습니다. 카드를 여기로 드래그하거나 추가하세요.</p>}
           </div>
@@ -1038,7 +1042,7 @@ const getModifier = (score: number | string) => {
   return mod >= 0 ? `+${mod}` : mod;
 };
 
-function DMCard({ card, updateCard, deleteCard, openModal }: any) {
+function DMCard({ card, updateCard, deleteCard, openModal, isListMode }: any) {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [isPreviewMode, setIsPreviewMode] = useState(false);
@@ -1110,7 +1114,7 @@ function DMCard({ card, updateCard, deleteCard, openModal }: any) {
   };
 
   const handleEditorMouseOut = () => {
-    if (tooltipData?.isPinned) return; // Keep it if pinned
+    if (tooltipData?.isPinned) return;
     clearTooltipTimeout();
     tooltipTimeoutRef.current = setTimeout(() => {
       setTooltipData(prev => (prev?.isPinned ? prev : null));
@@ -1118,8 +1122,6 @@ function DMCard({ card, updateCard, deleteCard, openModal }: any) {
   };
 
   useEffect(() => { 
-    // Only update local state if the server value changed and it's different from our last sync
-    // AND if we are not currently focusing the element
     if (card.title !== lastSyncedTitle.current) {
       lastSyncedTitle.current = card.title;
       if (document.activeElement !== titleInputRef.current) {
@@ -1153,19 +1155,17 @@ function DMCard({ card, updateCard, deleteCard, openModal }: any) {
       try {
         const fileExt = file.name.split('.').pop();
         const fileName = `${card.session_id}/${card.id}_${Date.now()}.${fileExt}`;
-        
         const { error } = await supabase!.storage.from('images').upload(fileName, file);
         if (error) {
           if (error.message.includes('Bucket not found')) {
-            throw new Error("Supabase Storage에 'images' 버킷이 없습니다. 첫 화면의 SQL을 다시 실행하거나 대시보드에서 생성해주세요.");
+            throw new Error("Supabase Storage에 'images' 버킷이 없습니다.");
           }
           throw error;
         }
-
         const { data: { publicUrl } } = supabase!.storage.from('images').getPublicUrl(fileName);
         updateCard(card.id, { img_src: publicUrl });
       } catch (error: any) {
-        alert('이미지 업로드 실패: ' + error.message);
+        alert('업로드 실패: ' + error.message);
       } finally {
         setUploading(false);
       }
@@ -1183,19 +1183,14 @@ function DMCard({ card, updateCard, deleteCard, openModal }: any) {
   const handleEditorClick = (e: React.MouseEvent) => {
     const target = e.target as HTMLElement;
     const trigger = target.closest('.keyword-memo') as HTMLElement;
-    
     if (trigger) {
       clearTooltipTimeout();
-      setTooltipData(prev => {
-        // Toggle pin if clicking the same trigger
+      setTooltipData((prev: any) => {
         if (prev && prev.el === trigger) return { ...prev, isPinned: !prev.isPinned };
-        
         let memo = trigger.getAttribute('data-memo') || '';
         try { memo = decodeURIComponent(memo); } catch (ex) {}
-        
         let icon = undefined;
         let type: 'system' | 'user' = 'user';
-        
         if (!memo) {
           const keyword = trigger.getAttribute('data-keyword') || trigger.textContent || '';
           const dictData = keywordDictionary[keyword];
@@ -1205,15 +1200,7 @@ function DMCard({ card, updateCard, deleteCard, openModal }: any) {
             type = 'system';
           }
         }
-
-        return {
-          el: trigger,
-          content: memo,
-          stats: localStats,
-          icon,
-          type,
-          isPinned: true
-        };
+        return { el: trigger, content: memo, stats: localStats, icon, type, isPinned: true };
       });
     }
   };
@@ -1227,7 +1214,6 @@ function DMCard({ card, updateCard, deleteCard, openModal }: any) {
         span.parentNode?.replaceChild(textNode, span);
       } else {
         span.dataset.memo = encodeURIComponent(html);
-        span.removeAttribute('title');
         span.removeAttribute('id');
       }
       if (editorRef.current) {
@@ -1257,13 +1243,212 @@ function DMCard({ card, updateCard, deleteCard, openModal }: any) {
       if (!span.getAttribute('data-memo')) {
         const textNode = document.createTextNode(span.textContent || '');
         span.parentNode?.replaceChild(textNode, span);
-        if (editorRef.current) updateCard(card.id, { content: editorRef.current.innerHTML });
       } else {
         span.removeAttribute('id');
       }
     }
     setEditingMemo(null);
   };
+
+  const renderModal = () => {
+    if (!isModalOpen) return null;
+    return (
+      <div className="card-modal-overlay" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.7)', zIndex: 1000, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '10px' }} onClick={() => setIsModalOpen(false)}>
+        <div className="card" style={{ width: '100%', maxWidth: '800px', maxHeight: '95vh', overflowY: 'auto', background: 'var(--bg-main)', position: 'relative' }} onClick={e => e.stopPropagation()}>
+          <div className="card-header" style={{ marginBottom: '20px', position: 'sticky', top: '-20px', background: 'var(--bg-main)', zIndex: 10, padding: '10px 0', borderBottom: '1px solid var(--border-color)', margin: '-20px -20px 20px -20px', paddingLeft: '20px', paddingRight: '20px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+              <input 
+                type="text" 
+                ref={titleInputRef}
+                className="card-title" 
+                value={localTitle} 
+                onChange={e => setLocalTitle(e.target.value)} 
+                onBlur={() => { if (localTitle !== card.title) updateCard(card.id, { title: localTitle }) }} 
+                style={{ width: '100%', maxWidth: '400px', fontSize: '1.2em' }} 
+                placeholder="카드 제목" 
+              />
+              <button className="btn" style={{ background: '#4b5563', padding: '6px 12px' }} onClick={() => setIsModalOpen(false)}>닫기</button>
+            </div>
+          </div>
+
+          <div className="card-body" style={{ padding: '0' }}>
+            <div style={{ background: 'var(--stat-bg)', padding: '12px', borderRadius: '8px', marginBottom: '20px', border: '1px solid var(--border-color)' }}>
+              <div style={{ fontWeight: 'bold', marginBottom: '10px', color: 'var(--accent-primary)', display: 'flex', alignItems: 'center', gap: '5px', fontSize: '0.9em' }}>
+                <Settings2 size={14} /> 설정
+              </div>
+              
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                  <span style={{ color: 'var(--text-muted)', fontSize: '0.85em', width: '70px' }}>공개 범위:</span>
+                  <select 
+                    value={card.reveal_mode || 'hidden'} 
+                    onChange={e => updateCard(card.id, { reveal_mode: e.target.value as any })}
+                    style={{ background: 'var(--card-bg)', border: '1px solid var(--border-color)', color: 'var(--text-main)', padding: '4px 8px', borderRadius: '4px', fontSize: '0.9em' }}
+                  >
+                    <option value="hidden">비공개</option>
+                    <option value="name_only">이름만</option>
+                    <option value="image_only">이미지만</option>
+                    <option value="full">전체</option>
+                  </select>
+                </div>
+
+                {card.reveal_mode !== 'hidden' && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                    <span style={{ color: 'var(--text-muted)', fontSize: '0.85em', width: '70px' }}>이름 표시:</span>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer', fontSize: '0.85em' }}>
+                      <input type="radio" checked={!localStats.hide_name} onChange={() => updateCard(card.id, { stats: { ...localStats, hide_name: false }})} /> 실제
+                    </label>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer', fontSize: '0.85em' }}>
+                      <input type="radio" checked={localStats.hide_name} onChange={() => updateCard(card.id, { stats: { ...localStats, hide_name: true }})} /> 가명
+                    </label>
+                    {localStats.hide_name && (
+                      <input type="text" value={localStats.alt_name || ''} onChange={e => updateCard(card.id, { stats: {...localStats, alt_name: e.target.value }})} placeholder="??? (미확인)" style={{ padding: '2px 6px', background: 'var(--bg-main)', border: '1px solid var(--border-color)', color: 'var(--text-main)', borderRadius: '4px', fontSize: '0.85em', width: '100px' }} />
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {card.type === 'statblock' && (
+              <div style={{ marginBottom: '20px' }}>
+                <HPBar current={card.hp ?? 10} max={card.max_hp ?? 10} temp={card.temp_hp ?? 0} isDM={true} onUpdate={(u) => updateCard(card.id, u)} />
+              </div>
+            )}
+            
+            {(card.type === 'image' || card.type === 'statblock') && (
+              <div style={{ marginBottom: '20px', padding: '12px', background: 'var(--card-bg)', border: '1px solid var(--border-color)', borderRadius: '8px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                  <span style={{ fontWeight: 'bold', color: 'var(--accent-primary)', fontSize: '0.9em' }}>이미지</span>
+                  <label style={{ cursor: 'pointer', background: 'var(--bg-main)', border: '1px solid var(--border-color)', padding: '4px 10px', borderRadius: '4px', fontSize: '0.8em', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <ImageIcon size={12} /> 업로드
+                    <input type="file" accept="image/*" onChange={handleImageUpload} disabled={uploading} style={{ display: 'none' }} />
+                  </label>
+                  {card.img_src && (
+                    <button className="btn btn-danger" style={{ padding: '4px 8px', fontSize: '0.8em' }} onClick={() => updateCard(card.id, { img_src: null })}>제거</button>
+                  )}
+                </div>
+                {card.img_src && <img src={card.img_src} className="image-preview" onClick={() => openModal(card.img_src)} style={{ marginTop: '10px', maxWidth: '100%', maxHeight: '400px', borderRadius: '6px', cursor: 'zoom-in' }} />}
+              </div>
+            )}
+
+            {card.type === 'statblock' && (
+              <div className="stats-grid" ref={statsContainerRef} style={{ marginBottom: '20px', background: 'var(--card-bg)', display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px', padding: '10px' }}>
+                {(['str', 'dex', 'con', 'int', 'wis', 'cha'] as const).map(stat => (
+                  <div className="stat-box" key={stat} style={{ padding: '8px' }}>
+                    <span className="stat-name" style={{ fontSize: '0.7em' }}>{stat.toUpperCase()}</span>
+                    <input type="text" className="stat-input" value={localStats[stat]} onChange={e => handleStatChange(stat, e.target.value)} onBlur={handleStatBlur} style={{ width: '100%', textAlign: 'center', fontSize: '1em' }} />
+                    <span style={{ fontSize: '0.7em', color: 'var(--text-muted)' }}>({getModifier(localStats[stat])})</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {(card.type === 'statblock' || card.type === 'text') && (
+              <div style={{ background: 'var(--card-bg)', borderRadius: '8px', border: '1px solid var(--border-color)', overflow: 'hidden' }}>
+                <div className="toolbar" style={{ border: 'none', borderBottom: '1px solid var(--border-color)', margin: 0, borderRadius: 0, background: 'var(--stat-bg)', flexWrap: 'wrap', height: 'auto', padding: '4px' }}>
+                  <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('bold')}><b>B</b></button>
+                  <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('italic')}><i>I</i></button>
+                  <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('underline')}><u>U</u></button>
+                  <button onMouseDown={e => {
+                    e.preventDefault();
+                    const selection = window.getSelection();
+                    if (!selection || selection.rangeCount === 0 || selection.isCollapsed) return alert('단어를 선택해주세요.');
+                    const tempId = 'memo-' + Date.now();
+                    document.execCommand('insertHTML', false, `<span id="${tempId}" class="keyword-memo">${selection.toString()}</span>`);
+                    if (editorRef.current) {
+                      updateCard(card.id, { content: editorRef.current.innerHTML });
+                      setEditingMemo({ id: tempId, html: '' });
+                    }
+                  }} style={{ background: 'var(--accent-primary)', color: 'white', border: 'none', padding: '4px 8px', fontSize: '0.8em' }}>+ 툴팁</button>
+                  <button onMouseDown={e => e.preventDefault()} onClick={() => setIsPreviewMode(!isPreviewMode)} style={{ marginLeft: 'auto', fontSize: '0.8em' }}>
+                    {isPreviewMode ? '✏️ 편집' : '👁️ 확인'}
+                  </button>
+                </div>
+                
+                <div style={{ padding: '10px' }}>
+                  {isPreviewMode ? (
+                    <div className="editor-content" style={{ minHeight: '150px' }} onMouseOver={handleEditorMouseOver} onMouseOut={handleEditorMouseOut} onClick={handleEditorClick}>
+                      <ParsedText text={card.content} stats={localStats} />
+                    </div>
+                  ) : (
+                    <div 
+                      ref={editorRef} className="editor" contentEditable suppressContentEditableWarning
+                      onBlur={e => {
+                        const newContent = e.currentTarget.innerHTML;
+                        setLocalContent(newContent);
+                        updateCard(card.id, { content: newContent });
+                      }}
+                      dangerouslySetInnerHTML={{ __html: localContent }}
+                      style={{ minHeight: '150px', border: 'none', padding: 0 }}
+                    />
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+        <GlobalTooltip data={tooltipData} onMouseEnter={clearTooltipTimeout} onMouseLeave={handleEditorMouseOut} onClose={() => setTooltipData(null)} onPinToggle={() => setTooltipData(prev => prev ? { ...prev, isPinned: !prev.isPinned } : null)} isEditable={!isPreviewMode} />
+        {editingMemo && <TooltipEditorModal initialHtml={editingMemo.html} onSave={saveMemo} onCancel={cancelMemo} onDelete={deleteMemo} />}
+      </div>
+    );
+  };
+
+  if (isListMode) {
+    return (
+      <div 
+        className={`card ${card.reveal_mode !== 'hidden' ? 'revealed' : ''} list-mode-item`} 
+        style={{ 
+          padding: '8px 12px 8px 40px', 
+          display: 'flex', 
+          alignItems: 'center', 
+          gap: '12px',
+          minHeight: '48px',
+          cursor: 'pointer',
+          marginBottom: '0',
+          opacity: (card.type === 'statblock' && card.hp !== undefined && card.hp <= 0) ? 0.6 : 1
+        }}
+        onClick={() => setIsModalOpen(true)}
+      >
+        <div style={{ width: '30px', height: '30px', borderRadius: '4px', background: 'var(--stat-bg)', flexShrink: 0, overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          {card.img_src ? (
+            <img src={card.img_src} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+          ) : (
+            <div style={{ width: '100%', display: 'flex', justifyContent: 'center', color: 'var(--text-muted)' }}>
+              {card.type === 'statblock' ? <User size={14} /> : card.type === 'image' ? <ImageIcon size={14} /> : <FileText size={14} />}
+            </div>
+          )}
+        </div>
+        
+        <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <div style={{ fontWeight: 'bold', fontSize: '0.9em', color: 'var(--text-main)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {localTitle || '제목 없음'}
+          </div>
+          {card.type === 'statblock' && card.hp !== undefined && (
+            <div style={{ fontSize: '0.7em', color: 'var(--accent-primary)', fontWeight: 'bold', background: 'rgba(59, 130, 246, 0.1)', padding: '1px 5px', borderRadius: '3px', whiteSpace: 'nowrap' }}>
+              {card.hp}/{card.max_hp}
+            </div>
+          )}
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }} onClick={e => e.stopPropagation()}>
+          <button 
+            className="btn" 
+            style={{ 
+              padding: '4px', background: card.reveal_mode === 'hidden' ? 'transparent' : 'var(--accent-success)',
+              color: card.reveal_mode === 'hidden' ? 'var(--text-muted)' : '#fff', border: 'none'
+            }}
+            onClick={() => updateCard(card.id, { reveal_mode: card.reveal_mode === 'hidden' ? 'full' : 'hidden' })}
+          >
+            {card.reveal_mode === 'hidden' ? <EyeOff size={14}/> : <Eye size={14}/>}
+          </button>
+          <button className="btn" style={{ padding: '4px', background: 'transparent', color: 'var(--accent-danger)', border: 'none' }} onClick={() => deleteCard(card.id)}>
+            <Trash2 size={14}/>
+          </button>
+        </div>
+        {renderModal()}
+      </div>
+    );
+  }
 
   return (
     <>
@@ -1274,24 +1459,23 @@ function DMCard({ card, updateCard, deleteCard, openModal }: any) {
       >
         <div className="card-header" style={{ marginBottom: (card.type === 'statblock') ? '15px' : '0', paddingBottom: (card.type === 'statblock') ? '15px' : '0', borderBottom: (card.type === 'statblock') ? '1px solid var(--border-color)' : 'none' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1 }}>
-            <span style={{ color: 'var(--accent-primary)', fontSize: '1.2em' }}>📄</span>
-            <div className="card-title" style={{ fontSize: '1.2em', fontWeight: 'bold' }}>{localTitle || '제목 없음'}</div>
+            <span style={{ color: 'var(--accent-primary)', fontSize: '1.2em' }}>{card.type === 'statblock' ? '👤' : card.type === 'image' ? '🖼️' : '📄'}</span>
+            <div className="card-title" style={{ fontSize: '1.1em', fontWeight: 'bold' }}>{localTitle || '제목 없음'}</div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }} onClick={e => e.stopPropagation()}>
             <button 
-              className={`btn`} 
+              className="btn" 
               style={{ 
                 padding: '4px 8px', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.85em',
                 background: card.reveal_mode === 'hidden' ? 'var(--bg-main)' : 'var(--accent-success)',
                 color: card.reveal_mode === 'hidden' ? 'var(--text-main)' : '#fff',
-                border: card.reveal_mode === 'hidden' ? '1px solid var(--border-color)' : '1px solid var(--accent-success)'
+                border: '1px solid var(--border-color)'
               }}
               onClick={() => updateCard(card.id, { reveal_mode: card.reveal_mode === 'hidden' ? 'full' : 'hidden' })}
-              title="공개 상태 변경"
             >
               {card.reveal_mode === 'hidden' ? <EyeOff size={14}/> : <Eye size={14}/>}
             </button>
-            <button className="btn btn-danger" style={{ padding: '4px 6px' }} onClick={() => deleteCard(card.id)} title="카드 삭제"><Trash2 size={14}/></button>
+            <button className="btn btn-danger" style={{ padding: '4px 6px' }} onClick={() => deleteCard(card.id)}><Trash2 size={14}/></button>
           </div>
         </div>
         
@@ -1311,239 +1495,14 @@ function DMCard({ card, updateCard, deleteCard, openModal }: any) {
               {(['str', 'dex', 'con', 'int', 'wis', 'cha'] as const).map(stat => (
                 <div className="stat-box" key={stat}>
                   <span className="stat-name">{stat.toUpperCase()}</span>
-                  <span className="stat-val" style={{ fontSize: '1.1em' }}>{localStats[stat]} <span style={{ fontSize: '0.8em', color: 'var(--text-muted)' }}>({getModifier(localStats[stat])})</span></span>
+                  <span className="stat-val" style={{ fontSize: '1em' }}>{localStats[stat]} <span style={{ fontSize: '0.8em', color: 'var(--text-muted)' }}>({getModifier(localStats[stat])})</span></span>
                 </div>
               ))}
             </div>
           )}
         </div>
       </div>
-
-      {isModalOpen && (
-        <div className="card-modal-overlay" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.7)', zIndex: 1000, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }}>
-          {/* 하위 모달의 클릭이 bg 닫기로 이어지지 않도록 */}
-          <div className="card" style={{ width: '100%', maxWidth: '800px', maxHeight: '90vh', overflowY: 'auto', background: 'var(--bg-main)', position: 'relative' }}>
-            <div className="card-header" style={{ marginBottom: '20px', position: 'sticky', top: '-24px', background: 'var(--bg-main)', zIndex: 10, padding: '10px 0', borderBottom: '1px solid var(--border-color)', margin: '-24px -24px 20px -24px', paddingLeft: '24px', paddingRight: '24px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
-                <input 
-                  type="text" 
-                  ref={titleInputRef}
-                  className="card-title" 
-                  value={localTitle} 
-                  onChange={e => setLocalTitle(e.target.value)} 
-                  onBlur={() => { if (localTitle !== card.title) updateCard(card.id, { title: localTitle }) }} 
-                  style={{ width: '100%', maxWidth: '400px', fontSize: '1.4em' }} 
-                  placeholder="카드 제목" 
-                />
-                <button className="btn" style={{ background: '#4b5563' }} onClick={() => setIsModalOpen(false)}>닫기</button>
-              </div>
-            </div>
-
-            <div className="card-body">
-              <div style={{ background: 'var(--stat-bg)', padding: '15px', borderRadius: '8px', marginBottom: '25px', border: '1px solid var(--border-color)' }}>
-                <div style={{ fontWeight: 'bold', marginBottom: '15px', color: 'var(--accent-primary)', display: 'flex', alignItems: 'center', gap: '5px' }}>
-                  <Eye size={16} /> 설정
-                </div>
-                
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-                    <span style={{ color: 'var(--text-muted)', width: '80px', fontWeight: 'bold' }}>공개 범위:</span>
-                    <select 
-                      value={card.reveal_mode} 
-                      onChange={e => updateCard(card.id, { reveal_mode: e.target.value as any })}
-                      style={{ background: 'var(--card-bg)', border: '1px solid var(--border-color)', color: 'var(--text-main)', padding: '6px 12px', borderRadius: '6px', fontSize: '0.95em' }}
-                    >
-                      <option value="hidden">완전 비공개</option>
-                      <option value="name_only">이름만 공개 (상세정보/이미지 숨기기)</option>
-                      <option value="image_only">이미지만 공개 (상세정보 숨기기)</option>
-                      <option value="full">전체 공개 (스탯, 내용 포함)</option>
-                    </select>
-                  </div>
-
-                  {card.reveal_mode !== 'hidden' && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-                      <span style={{ color: 'var(--text-muted)', width: '80px', fontWeight: 'bold' }}>이름 표시:</span>
-                      <label style={{ display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer' }}>
-                        <input type="radio" checked={!localStats.hide_name} onChange={() => updateCard(card.id, { stats: { ...localStats, hide_name: false }})} /> 진짜 이름
-                      </label>
-                      <label style={{ display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer' }}>
-                        <input type="radio" checked={localStats.hide_name} onChange={() => updateCard(card.id, { stats: { ...localStats, hide_name: true }})} /> 가명 사용
-                      </label>
-                      {localStats.hide_name && (
-                        <input type="text" value={localStats.alt_name || ''} onChange={e => updateCard(card.id, { stats: {...localStats, alt_name: e.target.value }})} placeholder="??? (미확인 개체)" style={{ padding: '4px 8px', background: 'var(--bg-main)', border: '1px solid var(--border-color)', color: 'var(--text-main)', borderRadius: '4px', width: '140px' }} />
-                      )}
-                    </div>
-                  )}
-
-              {card.reveal_mode === 'full' && card.type === 'statblock' && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-                  <span style={{ color: 'var(--text-muted)', width: '80px', fontWeight: 'bold' }}>HP 표시:</span>
-                      <label style={{ display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer' }}>
-                        <input type="radio" checked={!localStats.hide_hp && !localStats.hide_hp_text} onChange={() => updateCard(card.id, { stats: { ...localStats, hide_hp: false, hide_hp_text: false }})} /> 수치+바(Bar)
-                      </label>
-                      <label style={{ display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer' }}>
-                        <input type="radio" checked={!localStats.hide_hp && localStats.hide_hp_text} onChange={() => updateCard(card.id, { stats: { ...localStats, hide_hp: false, hide_hp_text: true }})} /> 바(Bar)만
-                      </label>
-                      <label style={{ display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer' }}>
-                        <input type="radio" checked={localStats.hide_hp} onChange={() => updateCard(card.id, { stats: { ...localStats, hide_hp: true, hide_hp_text: false }})} /> 숨김
-                      </label>
-                    </div>
-                  )}
-
-                  {card.reveal_mode === 'full' && card.type === 'statblock' && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-                      <span style={{ color: 'var(--text-muted)', width: '80px', fontWeight: 'bold' }}>스탯 표시:</span>
-                      <label style={{ display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer' }}>
-                        <input type="radio" checked={!localStats.hide_stats} onChange={() => updateCard(card.id, { stats: { ...localStats, hide_stats: false }})} /> 공개
-                      </label>
-                      <label style={{ display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer' }}>
-                        <input type="radio" checked={localStats.hide_stats} onChange={() => updateCard(card.id, { stats: { ...localStats, hide_stats: true }})} /> 숨김 (???)
-                      </label>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {card.type === 'statblock' && (
-                <div style={{ marginBottom: '25px' }}>
-                  <HPBar current={card.hp ?? 10} max={card.max_hp ?? 10} temp={card.temp_hp ?? 0} isDM={true} onUpdate={(u) => updateCard(card.id, u)} />
-                </div>
-              )}
-              
-              {(card.type === 'image' || card.type === 'statblock') && (
-                <div style={{ marginBottom: '25px', padding: '15px', background: 'var(--card-bg)', border: '1px solid var(--border-color)', borderRadius: '8px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <span style={{ fontWeight: 'bold', color: 'var(--accent-primary)' }}>지도 / 이미지</span>
-                    <label style={{ cursor: 'pointer', background: 'var(--bg-main)', border: '1px solid var(--border-color)', padding: '6px 12px', borderRadius: '6px', fontSize: '0.9em', display: 'flex', alignItems: 'center', gap: '5px' }}>
-                      <ImageIcon size={14} /> 파일 업로드
-                      <input type="file" accept="image/*" onChange={handleImageUpload} disabled={uploading} style={{ display: 'none' }} />
-                    </label>
-                    {uploading && <span style={{ fontSize: '0.9em', color: 'var(--accent-primary)' }}>업로드 중...</span>}
-                    {card.img_src && (
-                      <button className="btn btn-danger" style={{ padding: '6px 10px', fontSize: '0.9em' }} onClick={() => updateCard(card.id, { img_src: null })}>제거</button>
-                    )}
-                  </div>
-                  {card.img_src && <img src={card.img_src} className="image-preview" onClick={() => openModal(card.img_src)} style={{ marginTop: '15px', maxWidth: '100%', maxHeight: '400px', borderRadius: '8px' }} />}
-                </div>
-              )}
-
-              {card.type === 'statblock' && (
-                <div className="stats-grid" ref={statsContainerRef} style={{ marginBottom: '25px', background: 'var(--card-bg)' }}>
-                  {(['str', 'dex', 'con', 'int', 'wis', 'cha'] as const).map(stat => (
-                    <div className="stat-box" key={stat}>
-                      <span className="stat-name">{stat.toUpperCase()}</span>
-                      <input type="text" className="stat-input" value={localStats[stat]} onChange={e => handleStatChange(stat, e.target.value)} onBlur={handleStatBlur} />
-                      <span style={{ fontSize: '0.9em', color: 'var(--text-muted)', marginTop: '4px' }}>({getModifier(localStats[stat])})</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {(card.type === 'statblock' || card.type === 'text') && (
-                <div style={{ background: 'var(--card-bg)', borderRadius: '8px', border: '1px solid var(--border-color)', overflow: 'hidden' }}>
-                  <div className="toolbar" style={{ border: 'none', borderBottom: '1px solid var(--border-color)', margin: 0, borderRadius: 0, background: 'var(--stat-bg)' }}>
-                    <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('bold')}><b>B</b></button>
-                    <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('italic')}><i>I</i></button>
-                    <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('underline')}><u>U</u></button>
-                    <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('foreColor', false, '#ef4444')} style={{ color: 'var(--accent-danger)' }}>Red</button>
-                    <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('foreColor', false, '#3b82f6')} style={{ color: 'var(--accent-primary)' }}>Blue</button>
-                    <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('foreColor', false, '#000000')} style={{ color: '#000000', fontWeight: 'bold' }}>Black</button>
-                    <div style={{ width: '1px', height: '24px', background: 'var(--border-color)', margin: '0 5px' }} />
-                    <button onMouseDown={e => {
-                      e.preventDefault();
-                      const selection = window.getSelection();
-                      if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
-                        alert('툴팁을 추가할 단어를 드래그해서 선택해주세요.');
-                        return;
-                      }
-                      const tempId = 'memo-' + Date.now();
-                      const html = `<span id="${tempId}" class="keyword-memo" data-memo="">${selection.toString()}</span>`;
-                      document.execCommand('insertHTML', false, html);
-                      
-                      if (editorRef.current) {
-                        const newContent = editorRef.current.innerHTML;
-                        setLocalContent(newContent);
-                        updateCard(card.id, { content: newContent });
-                        
-                        const inserted = document.getElementById(tempId);
-                        if (inserted) {
-                          setEditingMemo({ id: tempId, html: '' });
-                        }
-                      }
-                    }} style={{ background: 'var(--accent-primary)', color: 'white', border: 'none' }}>+ 툴팁 추가</button>
-                    
-                    <button onMouseDown={e => e.preventDefault()} onClick={() => setIsPreviewMode(!isPreviewMode)} style={{ marginLeft: 'auto', background: isPreviewMode ? 'var(--accent-success)' : 'transparent', color: isPreviewMode ? '#fff' : 'var(--text-main)', border: isPreviewMode ? 'none' : '1px solid var(--border-color)' }}>
-                      {isPreviewMode ? '✏️ 편집 모드' : '👁️ 작성 결과 확인'}
-                    </button>
-                  </div>
-                  
-                  <div style={{ padding: '20px' }}>
-                    {isPreviewMode ? (
-                      <div 
-                        className="editor-content" 
-                        style={{ minHeight: '200px', border: 'none', padding: 0, background: 'transparent' }}
-                        onMouseOver={handleEditorMouseOver}
-                        onMouseOut={handleEditorMouseOut}
-                        onClick={handleEditorClick}
-                      >
-                        <ParsedText text={card.content} stats={localStats} />
-                      </div>
-                    ) : (
-                      <div 
-                        ref={editorRef} className="editor" contentEditable suppressContentEditableWarning
-                        onBlur={e => {
-                          const newContent = e.currentTarget.innerHTML;
-                          setLocalContent(newContent);
-                          updateCard(card.id, { content: newContent });
-                        }}
-                        onClick={handleEditorClick}
-                        onMouseOver={handleEditorMouseOver}
-                        onMouseOut={handleEditorMouseOut}
-                        dangerouslySetInnerHTML={{ __html: localContent }}
-                        style={{ minHeight: '200px', border: 'none', padding: 0, background: 'transparent' }}
-                      />
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-
-          <GlobalTooltip 
-            data={tooltipData} 
-            onMouseEnter={clearTooltipTimeout}
-            onMouseLeave={() => {
-              clearTooltipTimeout();
-              tooltipTimeoutRef.current = setTimeout(() => {
-                setTooltipData(prev => (prev?.isPinned ? prev : null));
-              }, 400);
-            }}
-            onClose={() => {
-              clearTooltipTimeout();
-              setTooltipData(null);
-            }}
-            onPinToggle={() => setTooltipData(prev => prev ? { ...prev, isPinned: !prev.isPinned } : null)}
-            isEditable={!isPreviewMode}
-            onEdit={() => {
-              if (!tooltipData || isPreviewMode) return;
-              const trigger = tooltipData.el;
-              let currentMemo = trigger.getAttribute('data-memo') || '';
-              try { currentMemo = decodeURIComponent(currentMemo); } catch (e) {}
-              if (!trigger.id) trigger.id = 'memo-' + Date.now();
-              setEditingMemo({ id: trigger.id, html: currentMemo });
-              setTooltipData(null);
-            }}
-          />
-          {editingMemo && (
-            <TooltipEditorModal
-              initialHtml={editingMemo.html}
-              onSave={saveMemo}
-              onCancel={cancelMemo}
-              onDelete={deleteMemo}
-            />
-          )}
-        </div>
-      )}
+      {renderModal()}
     </>
   );
 }
