@@ -775,22 +775,12 @@ function DMCard({ card, updateCard, deleteCard, openModal }: any) {
     const target = e.target as HTMLElement;
     const trigger = target.closest('.keyword-memo') as HTMLElement;
     
-    if (isPreviewMode) {
-      if (trigger) {
-        setTooltipData(prev => {
-          if (prev && prev.el === trigger) return { ...prev, isPinned: !prev.isPinned };
-          if (prev && prev.isPinned) return null;
-          return prev;
-        });
-      }
-      return;
-    }
-
     if (trigger) {
-      let currentMemo = trigger.getAttribute('data-memo') || '';
-      try { currentMemo = decodeURIComponent(currentMemo); } catch (e) {}
-      if (!trigger.id) trigger.id = 'memo-' + Date.now();
-      setEditingMemo({ id: trigger.id, html: currentMemo });
+      setTooltipData(prev => {
+        if (prev && prev.el === trigger) return { ...prev, isPinned: !prev.isPinned };
+        if (prev && prev.isPinned) return null;
+        return prev;
+      });
     }
   };
 
@@ -872,6 +862,11 @@ function DMCard({ card, updateCard, deleteCard, openModal }: any) {
         </div>
         
         <div className="card-body" style={{ pointerEvents: 'none' }}>
+          {card.img_src && (
+            <div style={{ marginBottom: '15px' }}>
+              <img src={card.img_src} alt="" style={{ width: '100%', height: 'auto', borderRadius: '8px', maxHeight: '160px', objectFit: 'cover' }} />
+            </div>
+          )}
           {card.hp !== undefined && (
             <div style={{ pointerEvents: 'auto' }} onClick={e => e.stopPropagation()}>
               <HPBar current={card.hp ?? 10} max={card.max_hp ?? 10} temp={card.temp_hp ?? 0} isDM={true} onUpdate={(u) => updateCard(card.id, u)} />
@@ -1129,6 +1124,11 @@ function PlayerCard({ card, openModal, handleEditorMouseOver, handleEditorMouseO
         </div>
         
         <div className="card-body" style={{ pointerEvents: 'none' }}>
+          {(mode === 'full' || mode === 'image_only') && card.img_src && (
+            <div style={{ marginBottom: '15px' }}>
+              <img src={card.img_src} alt="" style={{ width: '100%', height: 'auto', borderRadius: '8px', maxHeight: '160px', objectFit: 'cover' }} />
+            </div>
+          )}
           {mode === 'full' && (
             <>
               {!cardStats.hide_hp && <HPBar current={card.hp ?? 10} max={card.max_hp ?? 10} temp={card.temp_hp ?? 0} isDM={false} hideNumbers={!!cardStats.hide_hp_text} />}
@@ -1342,22 +1342,12 @@ function PlayerDashboard({ session, user, onBack, openModal }: any) {
     const target = e.target as HTMLElement;
     const trigger = target.closest('.keyword-memo') as HTMLElement;
     
-    if (isPreviewMode) {
-      if (trigger) {
-        setTooltipData(prev => {
-          if (prev && prev.el === trigger) return { ...prev, isPinned: !prev.isPinned };
-          if (prev && prev.isPinned) return null;
-          return prev;
-        });
-      }
-      return;
-    }
-
     if (trigger) {
-      let currentMemo = trigger.getAttribute('data-memo') || '';
-      try { currentMemo = decodeURIComponent(currentMemo); } catch (e) {}
-      if (!trigger.id) trigger.id = 'memo-' + Date.now();
-      setEditingMemo({ id: trigger.id, html: currentMemo });
+      setTooltipData(prev => {
+        if (prev && prev.el === trigger) return { ...prev, isPinned: !prev.isPinned };
+        if (prev && prev.isPinned) return null;
+        return prev;
+      });
     }
   };
 
