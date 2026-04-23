@@ -879,6 +879,20 @@ function DMDashboard({ session, user, onBack, openModal, setActiveSession }: any
         <div className="header" style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
           <h2 style={{ margin: 0, color: 'var(--text-main)', fontSize: 'clamp(1.1em, 2vw, 1.5em)' }}>현재 세션: <span style={{ color: 'var(--accent-primary)' }}>{session.name}</span> <span style={{fontSize:'0.6em', color:'var(--text-muted)'}}>(마스터)</span></h2>
           <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+            {/* Mobile View Dropdown Switcher */}
+            <select 
+              className="mobile-only"
+              onChange={(e) => {
+                const el = document.getElementById(e.target.value);
+                if (el) el.scrollIntoView({ behavior: 'smooth' });
+              }}
+              style={{ background: 'var(--accent-primary)', color: 'white', border: 'none', borderRadius: '4px', padding: '4px 8px', fontSize: '0.8em' }}
+            >
+              <option value="">이동하기...</option>
+              <option value="timer-section">⏱️ 타이머</option>
+              <option value="init-section">⚔️ 전투 우선권</option>
+              <option value="card-section">📇 카드 목록</option>
+            </select>
             <button className="btn btn-action" onClick={addTimer} style={{ padding: '6px 12px', fontSize: '0.85em' }}><Timer size={14} style={{verticalAlign:'middle'}}/> <span className="hidden sm:inline">타이머 추가</span></button>
             <input type="file" id="bg-upload" accept="image/*" style={{ display: 'none' }} onChange={handleBgUpload} />
             <label htmlFor="bg-upload" className="btn btn-action" style={{ cursor: 'pointer', padding: '6px 12px', margin: 0, fontSize: '0.85em' }}><ImageIcon size={14} style={{verticalAlign:'middle'}}/> <span className="hidden sm:inline">배경 설정</span></label>
@@ -886,10 +900,14 @@ function DMDashboard({ session, user, onBack, openModal, setActiveSession }: any
           </div>
         </div>
 
-        <TimerManager timers={session.timers || []} isDM={true} onUpdate={updateTimer} onDelete={deleteTimer} />
-        <InitiativeTracker sessionId={session.id} isDM={true} />
+        <div id="timer-section">
+          <TimerManager timers={session.timers || []} isDM={true} onUpdate={updateTimer} onDelete={deleteTimer} />
+        </div>
+        <div id="init-section">
+          <InitiativeTracker sessionId={session.id} isDM={true} />
+        </div>
 
-        <div className="toolbar" style={{ marginBottom: '30px', justifyContent: 'center', background: 'transparent', border: 'none', gap: '8px', flexWrap: 'wrap' }}>
+        <div id="card-section" className="toolbar" style={{ marginBottom: '30px', justifyContent: 'center', background: 'transparent', border: 'none', gap: '8px', flexWrap: 'wrap' }}>
           <button className="btn btn-action" style={{background: '#8b5cf6', padding: '8px 12px'}} onClick={addFolder}><FolderPlus size={16} style={{verticalAlign:'middle'}}/> <span className="text-sm">폴더 생성</span></button>
           <div style={{ color: 'var(--text-muted)', fontSize: '0.8em', display: 'flex', alignItems: 'center', gap: '8px', background: 'var(--card-bg)', padding: '4px 10px', borderRadius: '20px', border: '1px solid var(--border-color)' }}>
             <span>F {folders.length} / C {cards.length}</span>
@@ -1354,10 +1372,24 @@ function DMCard({ card, updateCard, deleteCard, openModal, isListMode }: any) {
                     const selection = window.getSelection();
                     if (!selection || selection.rangeCount === 0 || selection.isCollapsed) return alert('단어를 선택해주세요.');
                     const tempId = 'memo-' + Date.now();
-                    document.execCommand('insertHTML', false, `<span id="${tempId}" class="keyword-memo">${selection.toString()}</span>`);
+                    const html = `<span id="${tempId}" class="keyword-memo" data-memo="">${selection.toString()}</span>`;
+                    
                     if (editorRef.current) {
-                      updateCard(card.id, { content: editorRef.current.innerHTML });
-                      setEditingMemo({ id: tempId, html: '' });
+                      editorRef.current.focus();
+                      document.execCommand('insertHTML', false, html);
+                      
+                      setTimeout(() => {
+                        if (editorRef.current) {
+                          const newContent = editorRef.current.innerHTML;
+                          setLocalContent(newContent);
+                          updateCard(card.id, { content: newContent });
+                          
+                          const inserted = document.getElementById(tempId);
+                          if (inserted) {
+                            setEditingMemo({ id: tempId, html: '' });
+                          }
+                        }
+                      }, 10);
                     }
                   }} style={{ background: 'var(--accent-primary)', color: 'white', border: 'none', padding: '4px 8px', fontSize: '0.8em' }}>+ 툴팁</button>
                   <button onMouseDown={e => e.preventDefault()} onClick={() => setIsPreviewMode(!isPreviewMode)} style={{ marginLeft: 'auto', fontSize: '0.8em' }}>
@@ -1378,6 +1410,9 @@ function DMCard({ card, updateCard, deleteCard, openModal, isListMode }: any) {
                         setLocalContent(newContent);
                         updateCard(card.id, { content: newContent });
                       }}
+                      onClick={handleEditorClick}
+                      onMouseOver={handleEditorMouseOver}
+                      onMouseOut={handleEditorMouseOut}
                       dangerouslySetInnerHTML={{ __html: localContent }}
                       style={{ minHeight: '150px', border: 'none', padding: 0 }}
                     />
@@ -1662,6 +1697,7 @@ function PlayerDashboard({ session, user, onBack, openModal }: any) {
   const [isPreviewMode, setIsPreviewMode] = useState(false);
   const [editingMemo, setEditingMemo] = useState<{ id: string, html: string } | null>(null);
   const [tooltipData, setTooltipData] = useState<TooltipData | null>(null);
+  const [activeTab, setActiveTab] = useState<'sheet' | 'combat' | 'cards'>('sheet');
   const tooltipTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const clearTooltipTimeout = () => {
@@ -1829,7 +1865,6 @@ function PlayerDashboard({ session, user, onBack, openModal }: any) {
         span.parentNode?.replaceChild(textNode, span);
       } else {
         span.dataset.memo = encodeURIComponent(html);
-        span.removeAttribute('title');
         span.removeAttribute('id');
       }
       if (editorRef.current) {
@@ -1880,22 +1915,71 @@ function PlayerDashboard({ session, user, onBack, openModal }: any) {
       <div className="dashboard" style={{ flex: 1, minWidth: 0, padding: '20px 0', margin: 0 }}>
         <div className="header">
         <h2 style={{ margin: 0, color: 'var(--text-main)' }}>현재 세션: <span style={{ color: 'var(--accent-primary)' }}>{session.name}</span> <span style={{fontSize:'0.6em', color:'var(--text-muted)'}}>(플레이어)</span></h2>
-        <button className="btn" style={{ background: '#4b5563' }} onClick={onBack}>← 세션 목록으로</button>
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          {/* Mobile View Dropdown Switcher */}
+          <select 
+            className="mobile-only"
+            onChange={(e) => {
+              const val = e.target.value;
+              if (val === 'sheet') setActiveTab('sheet');
+              else if (val === 'cards') setActiveTab('cards');
+              else if (val === 'combat') setActiveTab('combat');
+            }}
+            style={{ background: 'var(--accent-primary)', color: 'white', border: 'none', borderRadius: '10px', padding: '6px 12px', fontSize: '0.9em' }}
+          >
+            <option value="sheet">📍 내 시트</option>
+            <option value="cards">📍 공유 정보</option>
+            <option value="combat">📍 전투 현황</option>
+          </select>
+          <button className="btn" style={{ background: '#4b5563' }} onClick={onBack}>← <span className="hidden sm:inline">목록</span></button>
+        </div>
       </div>
 
-      <TimerManager timers={session.timers || []} isDM={false} />
-      <InitiativeTracker sessionId={session.id} isDM={false} />
+      <div className={activeTab !== 'combat' ? 'hidden-on-mobile' : ''}>
+        <TimerManager timers={session.timers || []} isDM={false} />
+        <InitiativeTracker sessionId={session.id} isDM={false} />
+      </div>
+
+      {/* Mobile-only Section Switcher */}
+      <div className="mobile-only" style={{ position: 'sticky', top: '0', zIndex: '100', background: 'var(--bg-main)', padding: '10px 0', marginBottom: '15px', borderBottom: '1px solid var(--border-color)' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '5px', background: 'var(--bg-secondary)', padding: '4px', borderRadius: '10px', border: '1px solid var(--border-color)' }}>
+          <button 
+            className={`btn ${activeTab === 'sheet' ? 'btn-action' : ''}`} 
+            style={{ fontSize: '0.8em', padding: '8px 2px', background: activeTab === 'sheet' ? 'var(--accent-primary)' : 'transparent', color: activeTab === 'sheet' ? '#fff' : 'var(--text-main)', border: 'none' }}
+            onClick={() => setActiveTab('sheet')}
+          >
+            내 시트
+          </button>
+          <button 
+            className={`btn ${activeTab === 'cards' ? 'btn-action' : ''}`} 
+            style={{ fontSize: '0.8em', padding: '8px 2px', background: activeTab === 'cards' ? 'var(--accent-primary)' : 'transparent', color: activeTab === 'cards' ? '#fff' : 'var(--text-main)', border: 'none' }}
+            onClick={() => setActiveTab('cards')}
+          >
+            공유 정보
+          </button>
+          <button 
+            className={`btn ${activeTab === 'combat' ? 'btn-action' : ''}`} 
+            style={{ fontSize: '0.8em', padding: '8px 2px', background: activeTab === 'combat' ? 'var(--accent-primary)' : 'transparent', color: activeTab === 'combat' ? '#fff' : 'var(--text-main)', border: 'none' }}
+            onClick={() => setActiveTab('combat')}
+          >
+            전투 현황
+          </button>
+        </div>
+      </div>
 
       <div style={{ display: 'flex', gap: '30px', alignItems: 'flex-start', flexWrap: 'wrap' }}>
-        <div className="card-container" style={{ flex: '1 1 500px', display: 'flex', flexDirection: 'column' }}>
+        {/* Desktop or Cards Tab */}
+        <div className={`card-container ${activeTab !== 'cards' ? 'hidden-on-mobile' : ''}`} style={{ flex: '1 1 500px', display: 'flex', flexDirection: 'column' }}>
           <h3 style={{ width: '100%', color: 'var(--accent-primary)', borderBottom: '1px solid var(--border-color)', paddingBottom: '10px', marginBottom: '20px' }}>공유된 정보</h3>
           {cards.map((card: CardData) => (
             <PlayerCard key={card.id} card={card} openModal={openModal} handleEditorMouseOver={handleEditorMouseOver} handleEditorMouseOut={handleEditorMouseOut} clearTooltipTimeout={clearTooltipTimeout} setTooltipData={setTooltipData} />
           ))}
+          {cards.length === 0 && <p style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '40px' }}>아직 공유된 카드가 없습니다.</p>}
         </div>
 
+        {/* Desktop or Sheet Tab */}
         {sheet && localStats && (
-          <div className="card" style={{ flex: '1 1 400px', position: 'sticky', top: '20px' }}>
+          <div className={`card ${activeTab !== 'sheet' ? 'hidden-on-mobile' : ''}`} style={{ flex: '1 1 400px', position: 'sticky', top: '20px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
               <User color="var(--accent-primary)" />
               <input 
@@ -1935,19 +2019,27 @@ function PlayerDashboard({ session, user, onBack, openModal }: any) {
                   alert('툴팁을 추가할 단어를 드래그해서 선택해주세요.');
                   return;
                 }
+                const range = selection.getRangeAt(0);
                 const tempId = 'memo-' + Date.now();
                 const html = `<span id="${tempId}" class="keyword-memo" data-memo="">${selection.toString()}</span>`;
+                
+                // Use a more robust way to insert HTML if possible
                 document.execCommand('insertHTML', false, html);
                 
                 if (editorRef.current) {
-                  const newContent = editorRef.current.innerHTML;
-                  setLocalContent(newContent);
-                  updateSheet({ content: newContent });
-                  
-                  const inserted = document.getElementById(tempId);
-                  if (inserted) {
-                    setEditingMemo({ id: tempId, html: '' });
-                  }
+                  // Re-sync after insertion
+                  setTimeout(() => {
+                    if (editorRef.current) {
+                      const newContent = editorRef.current.innerHTML;
+                      setLocalContent(newContent);
+                      updateSheet({ content: newContent });
+                      
+                      const inserted = document.getElementById(tempId);
+                      if (inserted) {
+                        setEditingMemo({ id: tempId, html: '' });
+                      }
+                    }
+                  }, 10);
                 }
               }} style={{ background: 'var(--bg-secondary)', color: 'var(--text-main)' }}>📝 툴팁 추가</button>
               <button onMouseDown={e => e.preventDefault()} onClick={() => setIsPreviewMode(!isPreviewMode)} style={{ marginLeft: 'auto', background: isPreviewMode ? 'var(--accent-primary)' : 'var(--bg-main)', color: isPreviewMode ? '#fff' : 'var(--text-main)', border: '1px solid var(--border-color)' }}>
