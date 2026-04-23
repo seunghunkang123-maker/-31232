@@ -39,7 +39,7 @@ interface PlayerSheet {
 interface Initiative { id: string; name: string; score: number; is_active: boolean; }
 
 // --- Helper Components ---
-function HPBar({ current, max, temp = 0, isDM, onUpdate }: { current: number, max: number, temp?: number, isDM: boolean, onUpdate?: (updates: any) => void }) {
+function HPBar({ current, max, temp = 0, isDM, onUpdate, hideNumbers }: { current: number, max: number, temp?: number, isDM: boolean, onUpdate?: (updates: any) => void, hideNumbers?: boolean }) {
   const percent = Math.min(100, Math.max(0, (current / max) * 100));
   const tempPercent = Math.min(100, (temp / max) * 100);
   
@@ -72,9 +72,15 @@ function HPBar({ current, max, temp = 0, isDM, onUpdate }: { current: number, ma
 
   return (
     <div className="hp-container">
-      <div className="hp-text">
-        <span>HP {current}{temp > 0 ? ` (+${temp})` : ''} / {max}</span>
-        <span>{Math.round(percent)}%</span>
+      <div className="hp-text" style={{ justifyContent: hideNumbers && !isDM ? 'center' : 'space-between' }}>
+        {(!hideNumbers || isDM) ? (
+          <>
+            <span>HP {current}{temp > 0 ? ` (+${temp})` : ''} / {max}</span>
+            <span>{Math.round(percent)}%</span>
+          </>
+        ) : (
+          <span>HP 여력</span>
+        )}
       </div>
       <div className="hp-bar-bg" style={{ opacity: current <= 0 ? 0.3 : 1 }}>
         <div className="hp-bar-fill" style={{ width: `${percent}%`, backgroundColor: color }} />
@@ -811,10 +817,29 @@ function DMCard({ card, updateCard, deleteCard, openModal }: any) {
 
   return (
     <div className={`card ${card.reveal_mode === 'full' ? 'revealed' : ''}`} style={{ opacity: (card.hp !== undefined && card.hp <= 0) ? 0.6 : 1 }}>
-      <div className="card-header" onClick={() => setIsExpanded(!isExpanded)} style={{ cursor: 'pointer' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', width: '50%' }} onClick={e => e.stopPropagation()}>
-          <span style={{ color: 'var(--accent-primary)' }}>{isExpanded ? '▼' : '▶'}</span>
-          <input type="text" className="card-title" value={localTitle} onChange={e => setLocalTitle(e.target.value)} onBlur={() => { if (localTitle !== card.title) updateCard(card.id, { title: localTitle }) }} style={{ width: '100%' }} />
+      <div className="card-header" onClick={() => setIsExpanded(!isExpanded)} style={{ cursor: 'pointer', userSelect: 'none' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', width: '50%' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <span style={{ color: 'var(--accent-primary)', fontSize: '1.2em', transition: 'transform 0.2s', transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)' }}>▶</span>
+            <div style={{ display: 'flex', alignItems: 'center', width: '100%', gap: '5px' }} onClick={e => e.stopPropagation()}>
+              <input type="text" className="card-title" value={localTitle} onChange={e => setLocalTitle(e.target.value)} onBlur={() => { if (localTitle !== card.title) updateCard(card.id, { title: localTitle }) }} style={{ width: '100%' }} />
+              <button className={`reveal-btn ${card.stats?.hide_name ? 'hidden' : 'active'}`} onClick={() => updateCard(card.id, { stats: { ...card.stats, hide_name: !card.stats?.hide_name } })} title="플레이어에게 이름 숨기기/보이기">
+                {card.stats?.hide_name ? <EyeOff size={16}/> : <Eye size={16}/>}
+              </button>
+            </div>
+          </div>
+          {card.stats?.hide_name && (
+            <div style={{ paddingLeft: '25px', marginTop: '5px', display: 'flex', alignItems: 'center', gap: '5px' }} onClick={e => e.stopPropagation()}>
+              <span style={{ fontSize: '0.8em', color: 'var(--text-muted)' }}>↳ 가명:</span>
+              <input 
+                type="text" 
+                value={card.stats?.alt_name || ''} 
+                onChange={e => updateCard(card.id, { stats: { ...card.stats, alt_name: e.target.value } })}
+                placeholder="??? (미확인 개체)"
+                style={{ fontSize: '0.8em', padding: '2px 8px', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border-color)', color: 'var(--text-main)', borderRadius: '4px', flex: 1 }}
+              />
+            </div>
+          )}
         </div>
         <div onClick={e => e.stopPropagation()} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <div className="reveal-btn-group">
@@ -829,6 +854,29 @@ function DMCard({ card, updateCard, deleteCard, openModal }: any) {
 
       {isExpanded && (
         <div className="card-body">
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '5px', gap: '5px' }}>
+             <button 
+               className={`reveal-btn ${(!card.stats?.hide_hp && !card.stats?.hide_hp_text) ? 'active' : ''}`} 
+               style={{ width: 'auto', padding: '4px 8px', fontSize: '0.8em', border: '1px solid var(--border-color)', borderRadius: '4px' }} 
+               onClick={() => updateCard(card.id, { stats: { ...card.stats, hide_hp: false, hide_hp_text: false } })} 
+               title="플레이어에게 수치와 바 모두 공개">
+               <Eye size={14} style={{verticalAlign:'middle', marginRight:'4px'}}/> 수치+바 공개 (HP)
+             </button>
+             <button 
+               className={`reveal-btn ${(!card.stats?.hide_hp && card.stats?.hide_hp_text) ? 'active' : ''}`} 
+               style={{ width: 'auto', padding: '4px 8px', fontSize: '0.8em', border: '1px solid var(--border-color)', borderRadius: '4px', opacity: (!card.stats?.hide_hp && card.stats?.hide_hp_text) ? 1 : 0.6 }} 
+               onClick={() => updateCard(card.id, { stats: { ...card.stats, hide_hp: false, hide_hp_text: true } })} 
+               title="플레이어에게 체력바만 공개 (수치 숨김)">
+               <Eye size={14} style={{verticalAlign:'middle', marginRight:'4px'}}/> 바만 공개 (수치 숨김)
+             </button>
+             <button 
+               className={`reveal-btn ${card.stats?.hide_hp ? 'hidden active' : ''}`} 
+               style={{ width: 'auto', padding: '4px 8px', fontSize: '0.8em', border: '1px solid var(--border-color)', borderRadius: '4px', opacity: card.stats?.hide_hp ? 1 : 0.6 }} 
+               onClick={() => updateCard(card.id, { stats: { ...card.stats, hide_hp: true, hide_hp_text: false } })} 
+               title="플레이어 화면에서 HP 완전 숨김">
+               <EyeOff size={14} style={{verticalAlign:'middle', marginRight:'4px'}}/> HP 완전 숨기기
+             </button>
+          </div>
           <HPBar current={card.hp ?? 10} max={card.max_hp ?? 10} temp={card.temp_hp ?? 0} isDM={true} onUpdate={(u) => updateCard(card.id, u)} />
           
           {(card.type === 'image' || card.type === 'statblock') && (
@@ -921,6 +969,7 @@ function DMCard({ card, updateCard, deleteCard, openModal }: any) {
             setTooltipData(null);
           }, 300);
         }}
+        onClose={() => setTooltipData(null)}
       />
       {editingMemo && (
         <TooltipEditorModal
@@ -1141,7 +1190,7 @@ function PlayerDashboard({ session, user, onBack, openModal }: any) {
             return (
               <div key={card.id} className={`card player-card ${mode === 'full' ? '' : 'revealed'}`} style={{ opacity: (card.hp !== undefined && card.hp <= 0) ? 0.6 : 1 }}>
                 <div className="card-header">
-                  <div className="card-title">{mode === 'image_only' ? '??? (미확인 개체)' : card.title}</div>
+                  <div className="card-title">{(mode === 'image_only' || card.stats?.hide_name) ? (card.stats?.alt_name || '??? (미확인 개체)') : card.title}</div>
                 </div>
                 <div className="card-body">
                   {(mode === 'full' || mode === 'image_only') && card.img_src && (
@@ -1150,7 +1199,7 @@ function PlayerDashboard({ session, user, onBack, openModal }: any) {
                   
                   {mode === 'full' && (
                     <>
-                      <HPBar current={card.hp ?? 10} max={card.max_hp ?? 10} temp={card.temp_hp ?? 0} isDM={false} />
+                      {!card.stats?.hide_hp && <HPBar current={card.hp ?? 10} max={card.max_hp ?? 10} temp={card.temp_hp ?? 0} isDM={false} hideNumbers={!!card.stats?.hide_hp_text} />}
                       {card.type === 'statblock' && (
                         <div className="stats-grid">
                           {(['str', 'dex', 'con', 'int', 'wis', 'cha'] as const).map(stat => (
@@ -1267,6 +1316,7 @@ function PlayerDashboard({ session, user, onBack, openModal }: any) {
             setTooltipData(null);
           }, 300);
         }}
+        onClose={() => setTooltipData(null)}
       />
 
       {showLoadModal && (
