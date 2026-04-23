@@ -655,7 +655,7 @@ function DMDashboard({ session, user, onBack, openModal, setActiveSession }: any
 }
 
 function DMCard({ card, updateCard, deleteCard, openModal }: any) {
-  const [isExpanded, setIsExpanded] = useState(false);
+  const [isModalOpen, setIsModalOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [isPreviewMode, setIsPreviewMode] = useState(false);
   const [editingMemo, setEditingMemo] = useState<{ id: string, html: string } | null>(null);
@@ -833,209 +833,380 @@ function DMCard({ card, updateCard, deleteCard, openModal }: any) {
   };
 
   return (
-    <div className={`card ${card.reveal_mode !== 'hidden' ? 'revealed' : ''}`} style={{ opacity: (card.hp !== undefined && card.hp <= 0) ? 0.6 : 1 }}>
-      <div className="card-header" onClick={() => setIsExpanded(!isExpanded)} style={{ cursor: 'pointer', userSelect: 'none' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1 }} onClick={e => e.stopPropagation()}>
-          <span style={{ color: 'var(--accent-primary)', fontSize: '1.2em', transition: 'transform 0.2s', transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)', cursor: 'pointer' }} onClick={() => setIsExpanded(!isExpanded)}>▶</span>
-          <input type="text" className="card-title" value={localTitle} onChange={e => setLocalTitle(e.target.value)} onBlur={() => { if (localTitle !== card.title) updateCard(card.id, { title: localTitle }) }} style={{ width: '100%', maxWidth: '300px' }} />
+    <>
+      <div 
+        className={`card ${card.reveal_mode !== 'hidden' ? 'revealed' : ''}`} 
+        style={{ opacity: (card.hp !== undefined && card.hp <= 0) ? 0.6 : 1, cursor: 'pointer', display: 'flex', flexDirection: 'column' }}
+        onClick={() => setIsModalOpen(true)}
+      >
+        <div className="card-header" style={{ marginBottom: (card.type === 'statblock' || card.hp !== undefined) ? '15px' : '0', paddingBottom: (card.type === 'statblock' || card.hp !== undefined) ? '15px' : '0', borderBottom: (card.type === 'statblock' || card.hp !== undefined) ? '1px solid var(--border-color)' : 'none' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1 }}>
+            <span style={{ color: 'var(--accent-primary)', fontSize: '1.2em' }}>📄</span>
+            <div className="card-title" style={{ fontSize: '1.2em', fontWeight: 'bold' }}>{localTitle || '제목 없음'}</div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }} onClick={e => e.stopPropagation()}>
+            <button 
+              className={`btn`} 
+              style={{ 
+                padding: '4px 8px', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.85em',
+                background: card.reveal_mode === 'hidden' ? 'var(--bg-main)' : 'var(--accent-success)',
+                color: card.reveal_mode === 'hidden' ? 'var(--text-main)' : '#fff',
+                border: card.reveal_mode === 'hidden' ? '1px solid var(--border-color)' : '1px solid var(--accent-success)'
+              }}
+              onClick={() => updateCard(card.id, { reveal_mode: card.reveal_mode === 'hidden' ? 'full' : 'hidden' })}
+              title="공개 상태 변경"
+            >
+              {card.reveal_mode === 'hidden' ? <EyeOff size={14}/> : <Eye size={14}/>}
+            </button>
+            <button className="btn btn-danger" style={{ padding: '4px 6px' }} onClick={() => deleteCard(card.id)} title="카드 삭제"><Trash2 size={14}/></button>
+          </div>
         </div>
-        <div onClick={e => e.stopPropagation()} style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <button 
-            className={`btn`} 
-            style={{ 
-              padding: '6px 12px', display: 'flex', alignItems: 'center', gap: '6px', 
-              background: card.reveal_mode === 'hidden' ? 'var(--bg-main)' : 'var(--accent-success)',
-              color: card.reveal_mode === 'hidden' ? 'var(--text-main)' : '#fff',
-              border: card.reveal_mode === 'hidden' ? '1px solid var(--border-color)' : '1px solid var(--accent-success)'
-            }}
-            onClick={() => updateCard(card.id, { reveal_mode: card.reveal_mode === 'hidden' ? 'full' : 'hidden' })}
-          >
-            {card.reveal_mode === 'hidden' ? <><EyeOff size={14}/> 비공개</> : <><Eye size={14}/> 플레이어에게 공개됨</>}
-          </button>
-          <button className="btn btn-danger" style={{ padding: '6px 10px' }} onClick={() => deleteCard(card.id)} title="카드 삭제"><Trash2 size={16}/></button>
+        
+        <div className="card-body" style={{ pointerEvents: 'none' }}>
+          {card.hp !== undefined && (
+            <div style={{ pointerEvents: 'auto' }} onClick={e => e.stopPropagation()}>
+              <HPBar current={card.hp ?? 10} max={card.max_hp ?? 10} temp={card.temp_hp ?? 0} isDM={true} onUpdate={(u) => updateCard(card.id, u)} />
+            </div>
+          )}
+          {card.type === 'statblock' && (
+            <div className="stats-grid" style={{ marginBottom: 0, marginTop: '15px' }}>
+              {(['str', 'dex', 'con', 'int', 'wis', 'cha'] as const).map(stat => (
+                <div className="stat-box" key={stat}>
+                  <span className="stat-name">{stat.toUpperCase()}</span>
+                  <span className="stat-val" style={{ fontSize: '1.1em' }}>{card.stats[stat]} <span style={{ fontSize: '0.8em', color: 'var(--text-muted)' }}>({getModifier(card.stats[stat])})</span></span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
-      {isExpanded && (
-        <div className="card-body">
-          <div style={{ background: 'var(--stat-bg)', padding: '12px', borderRadius: '8px', marginBottom: '20px', border: '1px solid var(--border-color)', fontSize: '0.9em' }}>
-            <div style={{ fontWeight: 'bold', marginBottom: '10px', color: 'var(--accent-primary)', display: 'flex', alignItems: 'center', gap: '5px' }}>
-              <Eye size={16} /> 플레이어 화면 표시 설정
-            </div>
-            
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-                <span style={{ color: 'var(--text-muted)', width: '80px' }}>공개 범위:</span>
-                <select 
-                  value={card.reveal_mode} 
-                  onChange={e => updateCard(card.id, { reveal_mode: e.target.value as any })}
-                  style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: 'var(--text-main)', padding: '4px 8px', borderRadius: '4px', fontSize: '0.95em' }}
-                >
-                  <option value="hidden">완전 비공개</option>
-                  <option value="name_only">이름만 공개 (상세정보/이미지 숨기기)</option>
-                  <option value="image_only">이미지만 공개 (상세정보 숨기기)</option>
-                  <option value="full">전체 공개 (스탯, 내용 포함)</option>
-                </select>
+      {isModalOpen && (
+        <div className="card-modal-overlay" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.7)', zIndex: 1000, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }}>
+          {/* 하위 모달의 클릭이 bg 닫기로 이어지지 않도록 */}
+          <div className="card" style={{ width: '100%', maxWidth: '800px', maxHeight: '90vh', overflowY: 'auto', background: 'var(--bg-main)', position: 'relative' }}>
+            <div className="card-header" style={{ marginBottom: '20px', position: 'sticky', top: '-24px', background: 'var(--bg-main)', zIndex: 10, padding: '10px 0', borderBottom: '1px solid var(--border-color)', margin: '-24px -24px 20px -24px', paddingLeft: '24px', paddingRight: '24px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+                <input type="text" className="card-title" value={localTitle} onChange={e => setLocalTitle(e.target.value)} onBlur={() => { if (localTitle !== card.title) updateCard(card.id, { title: localTitle }) }} style={{ width: '100%', maxWidth: '400px', fontSize: '1.4em' }} placeholder="카드 제목" />
+                <button className="btn" style={{ background: '#4b5563' }} onClick={() => setIsModalOpen(false)}>닫기</button>
               </div>
+            </div>
 
-              {card.reveal_mode !== 'hidden' && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-                  <span style={{ color: 'var(--text-muted)', width: '80px' }}>이름 표시:</span>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer' }}>
-                    <input type="radio" checked={!card.stats?.hide_name} onChange={() => updateCard(card.id, { stats: { ...card.stats, hide_name: false }})} /> 진짜 이름
-                  </label>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer' }}>
-                    <input type="radio" checked={card.stats?.hide_name} onChange={() => updateCard(card.id, { stats: { ...card.stats, hide_name: true }})} /> 가명 사용
-                  </label>
-                  {card.stats?.hide_name && (
-                    <input type="text" value={card.stats?.alt_name || ''} onChange={e => updateCard(card.id, { stats: {...card.stats, alt_name: e.target.value }})} placeholder="??? (미확인 개체)" style={{ padding: '2px 8px', background: 'var(--bg-main)', border: '1px solid var(--border-color)', color: 'var(--text-main)', borderRadius: '4px', width: '140px' }} />
+            <div className="card-body">
+              <div style={{ background: 'var(--stat-bg)', padding: '15px', borderRadius: '8px', marginBottom: '25px', border: '1px solid var(--border-color)' }}>
+                <div style={{ fontWeight: 'bold', marginBottom: '15px', color: 'var(--accent-primary)', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                  <Eye size={16} /> 설정
+                </div>
+                
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+                    <span style={{ color: 'var(--text-muted)', width: '80px', fontWeight: 'bold' }}>공개 범위:</span>
+                    <select 
+                      value={card.reveal_mode} 
+                      onChange={e => updateCard(card.id, { reveal_mode: e.target.value as any })}
+                      style={{ background: 'var(--card-bg)', border: '1px solid var(--border-color)', color: 'var(--text-main)', padding: '6px 12px', borderRadius: '6px', fontSize: '0.95em' }}
+                    >
+                      <option value="hidden">완전 비공개</option>
+                      <option value="name_only">이름만 공개 (상세정보/이미지 숨기기)</option>
+                      <option value="image_only">이미지만 공개 (상세정보 숨기기)</option>
+                      <option value="full">전체 공개 (스탯, 내용 포함)</option>
+                    </select>
+                  </div>
+
+                  {card.reveal_mode !== 'hidden' && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+                      <span style={{ color: 'var(--text-muted)', width: '80px', fontWeight: 'bold' }}>이름 표시:</span>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer' }}>
+                        <input type="radio" checked={!card.stats?.hide_name} onChange={() => updateCard(card.id, { stats: { ...card.stats, hide_name: false }})} /> 진짜 이름
+                      </label>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer' }}>
+                        <input type="radio" checked={card.stats?.hide_name} onChange={() => updateCard(card.id, { stats: { ...card.stats, hide_name: true }})} /> 가명 사용
+                      </label>
+                      {card.stats?.hide_name && (
+                        <input type="text" value={card.stats?.alt_name || ''} onChange={e => updateCard(card.id, { stats: {...card.stats, alt_name: e.target.value }})} placeholder="??? (미확인 개체)" style={{ padding: '4px 8px', background: 'var(--bg-main)', border: '1px solid var(--border-color)', color: 'var(--text-main)', borderRadius: '4px', width: '140px' }} />
+                      )}
+                    </div>
+                  )}
+
+                  {card.reveal_mode === 'full' && card.hp !== undefined && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+                      <span style={{ color: 'var(--text-muted)', width: '80px', fontWeight: 'bold' }}>HP 표시:</span>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer' }}>
+                        <input type="radio" checked={!card.stats?.hide_hp && !card.stats?.hide_hp_text} onChange={() => updateCard(card.id, { stats: { ...card.stats, hide_hp: false, hide_hp_text: false }})} /> 수치+바(Bar)
+                      </label>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer' }}>
+                        <input type="radio" checked={!card.stats?.hide_hp && card.stats?.hide_hp_text} onChange={() => updateCard(card.id, { stats: { ...card.stats, hide_hp: false, hide_hp_text: true }})} /> 바(Bar)만
+                      </label>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer' }}>
+                        <input type="radio" checked={card.stats?.hide_hp} onChange={() => updateCard(card.id, { stats: { ...card.stats, hide_hp: true, hide_hp_text: false }})} /> 숨김
+                      </label>
+                    </div>
+                  )}
+
+                  {card.reveal_mode === 'full' && card.type === 'statblock' && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+                      <span style={{ color: 'var(--text-muted)', width: '80px', fontWeight: 'bold' }}>스탯 표시:</span>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer' }}>
+                        <input type="radio" checked={!card.stats?.hide_stats} onChange={() => updateCard(card.id, { stats: { ...card.stats, hide_stats: false }})} /> 공개
+                      </label>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer' }}>
+                        <input type="radio" checked={card.stats?.hide_stats} onChange={() => updateCard(card.id, { stats: { ...card.stats, hide_stats: true }})} /> 숨김 (???)
+                      </label>
+                    </div>
                   )}
                 </div>
-              )}
+              </div>
 
-              {card.reveal_mode === 'full' && card.hp !== undefined && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-                  <span style={{ color: 'var(--text-muted)', width: '80px' }}>HP 표시:</span>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer' }}>
-                    <input type="radio" checked={!card.stats?.hide_hp && !card.stats?.hide_hp_text} onChange={() => updateCard(card.id, { stats: { ...card.stats, hide_hp: false, hide_hp_text: false }})} /> 수치+바(Bar)
-                  </label>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer' }}>
-                    <input type="radio" checked={!card.stats?.hide_hp && card.stats?.hide_hp_text} onChange={() => updateCard(card.id, { stats: { ...card.stats, hide_hp: false, hide_hp_text: true }})} /> 바(Bar)만
-                  </label>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer' }}>
-                    <input type="radio" checked={card.stats?.hide_hp} onChange={() => updateCard(card.id, { stats: { ...card.stats, hide_hp: true, hide_hp_text: false }})} /> 숨김
-                  </label>
+              {card.hp !== undefined && (
+                <div style={{ marginBottom: '25px' }}>
+                  <HPBar current={card.hp ?? 10} max={card.max_hp ?? 10} temp={card.temp_hp ?? 0} isDM={true} onUpdate={(u) => updateCard(card.id, u)} />
+                </div>
+              )}
+              
+              {(card.type === 'image' || card.type === 'statblock') && (
+                <div style={{ marginBottom: '25px', padding: '15px', background: 'var(--card-bg)', border: '1px solid var(--border-color)', borderRadius: '8px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <span style={{ fontWeight: 'bold', color: 'var(--accent-primary)' }}>지도 / 이미지</span>
+                    <label style={{ cursor: 'pointer', background: 'var(--bg-main)', border: '1px solid var(--border-color)', padding: '6px 12px', borderRadius: '6px', fontSize: '0.9em', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                      <ImageIcon size={14} /> 파일 업로드
+                      <input type="file" accept="image/*" onChange={handleImageUpload} disabled={uploading} style={{ display: 'none' }} />
+                    </label>
+                    {uploading && <span style={{ fontSize: '0.9em', color: 'var(--accent-primary)' }}>업로드 중...</span>}
+                    {card.img_src && (
+                      <button className="btn btn-danger" style={{ padding: '6px 10px', fontSize: '0.9em' }} onClick={() => updateCard(card.id, { img_src: null })}>제거</button>
+                    )}
+                  </div>
+                  {card.img_src && <img src={card.img_src} className="image-preview" onClick={() => openModal(card.img_src)} style={{ marginTop: '15px', maxWidth: '100%', maxHeight: '400px', borderRadius: '8px' }} />}
                 </div>
               )}
 
-              {card.reveal_mode === 'full' && card.type === 'statblock' && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '15px', marginTop: '10px' }}>
-                  <span style={{ color: 'var(--text-muted)', width: '80px' }}>스탯 표시:</span>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer' }}>
-                    <input type="radio" checked={!card.stats?.hide_stats} onChange={() => updateCard(card.id, { stats: { ...card.stats, hide_stats: false }})} /> 공개
-                  </label>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer' }}>
-                    <input type="radio" checked={card.stats?.hide_stats} onChange={() => updateCard(card.id, { stats: { ...card.stats, hide_stats: true }})} /> 숨김 (???)
-                  </label>
+              {card.type === 'statblock' && (
+                <div className="stats-grid" style={{ marginBottom: '25px', background: 'var(--card-bg)' }}>
+                  {(['str', 'dex', 'con', 'int', 'wis', 'cha'] as const).map(stat => (
+                    <div className="stat-box" key={stat}>
+                      <span className="stat-name">{stat.toUpperCase()}</span>
+                      <input type="text" className="stat-input" value={localStats[stat]} onChange={e => handleStatChange(stat, e.target.value)} onBlur={handleStatBlur} />
+                      <span style={{ fontSize: '0.9em', color: 'var(--text-muted)', marginTop: '4px' }}>({getModifier(localStats[stat])})</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {(card.type === 'statblock' || card.type === 'text') && (
+                <div style={{ background: 'var(--card-bg)', borderRadius: '8px', border: '1px solid var(--border-color)', overflow: 'hidden' }}>
+                  <div className="toolbar" style={{ border: 'none', borderBottom: '1px solid var(--border-color)', margin: 0, borderRadius: 0, background: 'var(--stat-bg)' }}>
+                    <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('bold')}><b>B</b></button>
+                    <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('italic')}><i>I</i></button>
+                    <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('underline')}><u>U</u></button>
+                    <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('foreColor', false, '#ef4444')} style={{ color: 'var(--accent-danger)' }}>Red</button>
+                    <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('foreColor', false, '#3b82f6')} style={{ color: 'var(--accent-primary)' }}>Blue</button>
+                    <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('foreColor', false, '#000000')} style={{ color: '#000000', fontWeight: 'bold' }}>Black</button>
+                    <div style={{ width: '1px', height: '24px', background: 'var(--border-color)', margin: '0 5px' }} />
+                    <button onMouseDown={e => {
+                      e.preventDefault();
+                      const selection = window.getSelection();
+                      if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
+                        alert('툴팁을 추가할 단어를 드래그해서 선택해주세요.');
+                        return;
+                      }
+                      const tempId = 'memo-' + Date.now();
+                      const html = `<span id="${tempId}" class="keyword-memo" data-memo="">${selection.toString()}</span>`;
+                      document.execCommand('insertHTML', false, html);
+                      
+                      if (editorRef.current) {
+                        const newContent = editorRef.current.innerHTML;
+                        setLocalContent(newContent);
+                        updateCard(card.id, { content: newContent });
+                        
+                        const inserted = document.getElementById(tempId);
+                        if (inserted) {
+                          setEditingMemo({ id: tempId, html: '' });
+                        }
+                      }
+                    }} style={{ background: 'var(--accent-primary)', color: 'white', border: 'none' }}>+ 툴팁 추가</button>
+                    
+                    <button onMouseDown={e => e.preventDefault()} onClick={() => setIsPreviewMode(!isPreviewMode)} style={{ marginLeft: 'auto', background: isPreviewMode ? 'var(--accent-success)' : 'transparent', color: isPreviewMode ? '#fff' : 'var(--text-main)', border: isPreviewMode ? 'none' : '1px solid var(--border-color)' }}>
+                      {isPreviewMode ? '✏️ 편집 모드' : '👁️ 작성 결과 확인'}
+                    </button>
+                  </div>
+                  
+                  <div style={{ padding: '20px' }}>
+                    {isPreviewMode ? (
+                      <div 
+                        className="editor-content" 
+                        style={{ minHeight: '200px', border: 'none', padding: 0, background: 'transparent' }}
+                        onMouseOver={handleEditorMouseOver}
+                        onMouseOut={handleEditorMouseOut}
+                      >
+                        <ParsedText text={card.content} stats={localStats} />
+                      </div>
+                    ) : (
+                      <div 
+                        ref={editorRef} className="editor" contentEditable suppressContentEditableWarning
+                        onBlur={e => {
+                          const newContent = e.currentTarget.innerHTML;
+                          setLocalContent(newContent);
+                          updateCard(card.id, { content: newContent });
+                        }}
+                        onClick={handleEditorClick}
+                        onMouseOver={handleEditorMouseOver}
+                        onMouseOut={handleEditorMouseOut}
+                        dangerouslySetInnerHTML={{ __html: localContent }}
+                        style={{ minHeight: '200px', border: 'none', padding: 0, background: 'transparent' }}
+                      />
+                    )}
+                  </div>
                 </div>
               )}
             </div>
           </div>
 
-          <HPBar current={card.hp ?? 10} max={card.max_hp ?? 10} temp={card.temp_hp ?? 0} isDM={true} onUpdate={(u) => updateCard(card.id, u)} />
-          
-          {(card.type === 'image' || card.type === 'statblock') && (
-            <div style={{ marginBottom: '15px' }}>
-              <span style={{ fontSize: '0.8em', color: 'var(--text-muted)' }}>이미지 첨부:</span>
-              <input type="file" accept="image/*" onChange={handleImageUpload} disabled={uploading} style={{ marginLeft: '10px', color: 'var(--text-main)' }} />
-              {uploading && <span style={{ fontSize: '0.8em', color: 'var(--accent-primary)', marginLeft: '10px' }}>업로드 중...</span>}
-              {card.img_src && <img src={card.img_src} className="image-preview" onClick={() => openModal(card.img_src)} />}
-            </div>
-          )}
-
-          {card.type === 'statblock' && (
-            <div className="stats-grid">
-              {(['str', 'dex', 'con', 'int', 'wis', 'cha'] as const).map(stat => (
-                <div className="stat-box" key={stat}>
-                  <span className="stat-name">{stat.toUpperCase()}</span>
-                  <input type="text" className="stat-input" value={localStats[stat]} onChange={e => handleStatChange(stat, e.target.value)} onBlur={handleStatBlur} />
-                </div>
-              ))}
-            </div>
-          )}
-
-          {(card.type === 'statblock' || card.type === 'text') && (
-            <>
-              <div className="toolbar">
-                <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('bold')}><b>B</b></button>
-                <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('italic')}><i>I</i></button>
-                <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('underline')}><u>U</u></button>
-                <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('foreColor', false, '#ef4444')} style={{ color: 'var(--accent-danger)' }}>Red</button>
-                <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('foreColor', false, '#3b82f6')} style={{ color: 'var(--accent-primary)' }}>Blue</button>
-                <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('foreColor', false, '#000000')} style={{ color: '#000000', fontWeight: 'bold' }}>Black</button>
-                <button onMouseDown={e => {
-                  e.preventDefault();
-                  const selection = window.getSelection();
-                  if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
-                    alert('툴팁을 추가할 단어를 드래그해서 선택해주세요.');
-                    return;
-                  }
-                  const tempId = 'memo-' + Date.now();
-                  const html = `<span id="${tempId}" class="keyword-memo" data-memo="">${selection.toString()}</span>`;
-                  document.execCommand('insertHTML', false, html);
-                  
-                  if (editorRef.current) {
-                    const newContent = editorRef.current.innerHTML;
-                    setLocalContent(newContent);
-                    updateCard(card.id, { content: newContent });
-                    
-                    const inserted = document.getElementById(tempId);
-                    if (inserted) {
-                      setEditingMemo({ id: tempId, html: '' });
-                    }
-                  }
-                }} style={{ background: 'var(--bg-secondary)', color: 'var(--text-main)' }}>📝 툴팁 추가</button>
-                <button onMouseDown={e => e.preventDefault()} onClick={() => setIsPreviewMode(!isPreviewMode)} style={{ marginLeft: 'auto', background: isPreviewMode ? 'var(--accent-primary)' : 'var(--bg-main)', color: isPreviewMode ? '#fff' : 'var(--text-main)', border: '1px solid var(--border-color)' }}>
-                  {isPreviewMode ? '✏️ 편집 모드' : '👁️ 미리보기 (키워드 확인)'}
-                </button>
-              </div>
-              {isPreviewMode ? (
-                <div 
-                  className="editor-content" 
-                  style={{ minHeight: '150px' }}
-                  onMouseOver={handleEditorMouseOver}
-                  onMouseOut={handleEditorMouseOut}
-                >
-                  <ParsedText text={card.content} stats={localStats} />
-                </div>
-              ) : (
-                <div 
-                  ref={editorRef} className="editor" contentEditable suppressContentEditableWarning
-                  onBlur={e => {
-                    const newContent = e.currentTarget.innerHTML;
-                    setLocalContent(newContent);
-                    updateCard(card.id, { content: newContent });
-                  }}
-                  onClick={handleEditorClick}
-                  onMouseOver={handleEditorMouseOver}
-                  onMouseOut={handleEditorMouseOut}
-                  dangerouslySetInnerHTML={{ __html: localContent }}
-                />
-              )}
-            </>
+          <GlobalTooltip 
+            data={tooltipData} 
+            onMouseEnter={clearTooltipTimeout}
+            onMouseLeave={() => {
+              tooltipTimeoutRef.current = setTimeout(() => {
+                setTooltipData(prev => (prev?.isPinned ? prev : null));
+              }, 300);
+            }}
+            onClose={() => setTooltipData(null)}
+            onPinToggle={() => setTooltipData(prev => prev ? { ...prev, isPinned: !prev.isPinned } : null)}
+            isEditable={!isPreviewMode}
+            onEdit={() => {
+              if (!tooltipData || isPreviewMode) return;
+              const trigger = tooltipData.el;
+              let currentMemo = trigger.getAttribute('data-memo') || '';
+              try { currentMemo = decodeURIComponent(currentMemo); } catch (e) {}
+              if (!trigger.id) trigger.id = 'memo-' + Date.now();
+              setEditingMemo({ id: trigger.id, html: currentMemo });
+              setTooltipData(null);
+            }}
+          />
+          {editingMemo && (
+            <TooltipEditorModal
+              initialHtml={editingMemo.html}
+              onSave={saveMemo}
+              onCancel={cancelMemo}
+              onDelete={deleteMemo}
+            />
           )}
         </div>
       )}
-      <GlobalTooltip 
-        data={tooltipData} 
-        onMouseEnter={clearTooltipTimeout}
-        onMouseLeave={() => {
-          tooltipTimeoutRef.current = setTimeout(() => {
-            setTooltipData(prev => (prev?.isPinned ? prev : null));
-          }, 300);
-        }}
-        onClose={() => setTooltipData(null)}
-        onPinToggle={() => setTooltipData(prev => prev ? { ...prev, isPinned: !prev.isPinned } : null)}
-        isEditable={!isPreviewMode}
-        onEdit={() => {
-          if (!tooltipData || isPreviewMode) return;
-          const trigger = tooltipData.el;
-          let currentMemo = trigger.getAttribute('data-memo') || '';
-          try { currentMemo = decodeURIComponent(currentMemo); } catch (e) {}
-          if (!trigger.id) trigger.id = 'memo-' + Date.now();
-          setEditingMemo({ id: trigger.id, html: currentMemo });
-          setTooltipData(null);
-        }}
-      />
-      {editingMemo && (
-        <TooltipEditorModal
-          initialHtml={editingMemo.html}
-          onSave={saveMemo}
-          onCancel={cancelMemo}
-          onDelete={deleteMemo}
-        />
+    </>
+  );
+}
+
+function PlayerCard({ card, openModal, handleEditorMouseOver, handleEditorMouseOut, setTooltipData }: any) {
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const mode = card.reveal_mode || (card.is_revealed ? 'full' : 'hidden');
+  
+  if (mode === 'hidden') return null;
+
+  const displayName = (mode === 'image_only' || card.stats?.hide_name) ? (card.stats?.alt_name || '??? (미확인 개체)') : card.title;
+
+  return (
+    <>
+      <div 
+        className={`card player-card ${mode === 'full' ? '' : 'revealed'}`} 
+        style={{ opacity: (card.hp !== undefined && card.hp <= 0) ? 0.6 : 1, cursor: 'pointer', display: 'flex', flexDirection: 'column' }}
+        onClick={() => setIsModalOpen(true)}
+      >
+        <div className="card-header" style={{ marginBottom: (card.type === 'statblock' || card.hp !== undefined) ? '15px' : '0', paddingBottom: (card.type === 'statblock' || card.hp !== undefined) ? '15px' : '0', borderBottom: (card.type === 'statblock' || card.hp !== undefined) ? '1px solid var(--border-color)' : 'none' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1 }}>
+            <span style={{ color: 'var(--accent-primary)', fontSize: '1.2em' }}>📄</span>
+            <div className="card-title" style={{ fontSize: '1.2em', fontWeight: 'bold' }}>{displayName}</div>
+          </div>
+        </div>
+        
+        <div className="card-body" style={{ pointerEvents: 'none' }}>
+          {mode === 'full' && (
+            <>
+              {!card.stats?.hide_hp && <HPBar current={card.hp ?? 10} max={card.max_hp ?? 10} temp={card.temp_hp ?? 0} isDM={false} hideNumbers={!!card.stats?.hide_hp_text} />}
+              {card.type === 'statblock' && (
+                <div className="stats-grid" style={{ marginBottom: 0, marginTop: '15px' }}>
+                  {(['str', 'dex', 'con', 'int', 'wis', 'cha'] as const).map(stat => (
+                    <div className="stat-box" key={stat}>
+                      <span className="stat-name">{stat.toUpperCase()}</span>
+                      <span className="stat-val" style={{ fontSize: '1.1em' }}>
+                        {card.stats?.hide_stats ? '???' : `${card.stats[stat]} (${getModifier(card.stats[stat])})`}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+          {mode === 'name_only' && <p style={{color:'var(--text-muted)', textAlign:'center', margin: 0, fontSize: '0.9em'}}>상세 정보 비공개</p>}
+          {mode === 'image_only' && <p style={{color:'var(--text-muted)', textAlign:'center', margin: 0, fontSize: '0.9em'}}>클릭해서 이미지 보기</p>}
+        </div>
+      </div>
+
+      {isModalOpen && (
+        <div className="card-modal-overlay" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.7)', zIndex: 1000, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }} onClick={() => setIsModalOpen(false)}>
+          <div className="card" style={{ width: '100%', maxWidth: '800px', maxHeight: '90vh', overflowY: 'auto', background: 'var(--bg-main)', position: 'relative' }} onClick={e => e.stopPropagation()}>
+            <div className="card-header" style={{ marginBottom: '20px', position: 'sticky', top: '-24px', background: 'var(--bg-main)', zIndex: 10, padding: '10px 0', borderBottom: '1px solid var(--border-color)', margin: '-24px -24px 20px -24px', paddingLeft: '24px', paddingRight: '24px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+                <div className="card-title" style={{ fontSize: '1.4em', fontWeight: 'bold' }}>{displayName}</div>
+                <button className="btn" style={{ background: '#4b5563' }} onClick={() => setIsModalOpen(false)}>닫기</button>
+              </div>
+            </div>
+
+            <div className="card-body">
+              {(mode === 'full' || mode === 'image_only') && card.img_src && (
+                <div style={{ marginBottom: '25px', display: 'flex', justifyContent: 'center' }}>
+                  <img src={card.img_src} className="image-preview" onClick={() => openModal(card.img_src)} style={{ maxWidth: '100%', maxHeight: '400px', borderRadius: '8px' }} />
+                </div>
+              )}
+              
+              {mode === 'full' && (
+                <>
+                  {!card.stats?.hide_hp && (
+                    <div style={{ marginBottom: '25px' }}>
+                      <HPBar current={card.hp ?? 10} max={card.max_hp ?? 10} temp={card.temp_hp ?? 0} isDM={false} hideNumbers={!!card.stats?.hide_hp_text} />
+                    </div>
+                  )}
+                  {card.type === 'statblock' && (
+                    <div className="stats-grid" style={{ marginBottom: '25px', background: 'var(--card-bg)' }}>
+                      {(['str', 'dex', 'con', 'int', 'wis', 'cha'] as const).map(stat => (
+                        <div className="stat-box" key={stat}>
+                          <span className="stat-name">{stat.toUpperCase()}</span>
+                          <span className="stat-val" style={{ fontSize: '1.2em' }}>
+                            {card.stats?.hide_stats ? '???' : `${card.stats[stat]}`}
+                          </span>
+                          {!card.stats?.hide_stats && <span style={{ fontSize: '0.9em', color: 'var(--text-muted)', marginTop: '4px' }}>({getModifier(card.stats[stat])})</span>}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {card.content && (
+                    <div 
+                      style={{ padding: '20px', background: 'var(--card-bg)', borderRadius: '8px', border: '1px solid var(--border-color)' }}
+                      className="editor-content"
+                      onMouseOver={handleEditorMouseOver}
+                      onMouseOut={handleEditorMouseOut}
+                      onClick={(e) => {
+                        const target = e.target as HTMLElement;
+                        const trigger = target.closest('.keyword-memo') as HTMLElement;
+                        if (trigger) {
+                          setTooltipData((prev: any) => {
+                            if (prev && prev.el === trigger) return { ...prev, isPinned: !prev.isPinned };
+                            if (prev && prev.isPinned) return null;
+                            return prev;
+                          });
+                        }
+                      }}
+                    >
+                      <ParsedText text={card.content} stats={card.stats} />
+                    </div>
+                  )}
+                </>
+              )}
+              {mode === 'name_only' && <p style={{color:'var(--text-muted)', textAlign:'center', padding:'20px'}}>상세 정보가 아직 공개되지 않았습니다.</p>}
+            </div>
+          </div>
+        </div>
       )}
-    </div>
+    </>
   );
 }
 
@@ -1256,60 +1427,9 @@ function PlayerDashboard({ session, user, onBack, openModal }: any) {
       <div style={{ display: 'flex', gap: '30px', alignItems: 'flex-start', flexWrap: 'wrap' }}>
         <div className="card-container" style={{ flex: '1 1 500px', display: 'flex', flexDirection: 'column' }}>
           <h3 style={{ width: '100%', color: 'var(--accent-primary)', borderBottom: '1px solid var(--border-color)', paddingBottom: '10px', marginBottom: '20px' }}>공유된 정보</h3>
-          {cards.map((card: CardData) => {
-            const mode = card.reveal_mode || (card.is_revealed ? 'full' : 'hidden');
-            if (mode === 'hidden') return null;
-
-            return (
-              <div key={card.id} className={`card player-card ${mode === 'full' ? '' : 'revealed'}`} style={{ opacity: (card.hp !== undefined && card.hp <= 0) ? 0.6 : 1 }}>
-                <div className="card-header">
-                  <div className="card-title">{(mode === 'image_only' || card.stats?.hide_name) ? (card.stats?.alt_name || '??? (미확인 개체)') : card.title}</div>
-                </div>
-                <div className="card-body">
-                  {(mode === 'full' || mode === 'image_only') && card.img_src && (
-                    <img src={card.img_src} className="image-preview" onClick={() => openModal(card.img_src)} />
-                  )}
-                  
-                  {mode === 'full' && (
-                    <>
-                      {!card.stats?.hide_hp && <HPBar current={card.hp ?? 10} max={card.max_hp ?? 10} temp={card.temp_hp ?? 0} isDM={false} hideNumbers={!!card.stats?.hide_hp_text} />}
-                      {card.type === 'statblock' && (
-                        <div className="stats-grid">
-                          {(['str', 'dex', 'con', 'int', 'wis', 'cha'] as const).map(stat => (
-                            <div className="stat-box" key={stat}>
-                              <span className="stat-name">{stat.toUpperCase()}</span>
-                              <span className="stat-val">
-                                {card.stats?.hide_stats ? '???' : `${card.stats[stat]} (${getModifier(card.stats[stat])})`}
-                              </span>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                      <div 
-                        className="editor-content"
-                        onMouseOver={handleEditorMouseOver}
-                        onMouseOut={handleEditorMouseOut}
-                        onClick={(e) => {
-                          const target = e.target as HTMLElement;
-                          const trigger = target.closest('.keyword-memo') as HTMLElement;
-                          if (trigger) {
-                            setTooltipData(prev => {
-                              if (prev && prev.el === trigger) return { ...prev, isPinned: !prev.isPinned };
-                              if (prev && prev.isPinned) return null;
-                              return prev;
-                            });
-                          }
-                        }}
-                      >
-                        <ParsedText text={card.content} stats={card.stats} />
-                      </div>
-                    </>
-                  )}
-                  {mode === 'name_only' && <p style={{color:'var(--text-muted)', textAlign:'center', padding:'20px'}}>상세 정보가 아직 공개되지 않았습니다.</p>}
-                </div>
-              </div>
-            );
-          })}
+          {cards.map((card: CardData) => (
+            <PlayerCard key={card.id} card={card} openModal={openModal} handleEditorMouseOver={handleEditorMouseOver} handleEditorMouseOut={handleEditorMouseOut} setTooltipData={setTooltipData} />
+          ))}
         </div>
 
         {sheet && localStats && (
