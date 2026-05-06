@@ -30,6 +30,8 @@ const getTextContent = (node: any): string => {
 };
 
 export function ParsedText({ text, stats }: { text: string, stats: any }) {
+  if (typeof text !== 'string') return null;
+
   const replaceText = (str: string) => {
     const regex = /\[([^\]]+)\]/g;
     const parts = [];
@@ -99,7 +101,27 @@ export function ParsedText({ text, stats }: { text: string, stats: any }) {
           if (attribs['data-memo']) props['data-memo'] = attribs['data-memo'];
           if (attribs['data-keyword']) props['data-keyword'] = attribs['data-keyword'];
           if (attribs.id) props.id = attribs.id;
-          if (attribs.style) props.style = attribs.style;
+          
+          if (attribs.style) {
+            try {
+              const styleObj: any = {};
+              attribs.style.split(';').forEach((styleRule: string) => {
+                if (styleRule.trim() === '') return;
+                const parts = styleRule.split(':');
+                if (parts.length >= 2) {
+                  const key = parts[0].trim();
+                  const val = parts.slice(1).join(':').trim();
+                  const camelKey = key.replace(/-([a-z])/g, g => g[1].toUpperCase());
+                  styleObj[camelKey] = val;
+                }
+              });
+              if (Object.keys(styleObj).length > 0) {
+                props.style = styleObj;
+              }
+            } catch (e) {
+              console.warn("ParsedText style parsing error", e);
+            }
+          }
           
           return (
             <span {...props}>
