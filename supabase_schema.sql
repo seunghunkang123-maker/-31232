@@ -99,4 +99,6 @@ ALTER TABLE public.initiatives DISABLE ROW LEVEL SECURITY;
 -- ALTER TABLE public.cards ADD COLUMN IF NOT EXISTS hp INTEGER;
 -- ALTER TABLE public.cards ADD COLUMN IF NOT EXISTS max_hp INTEGER;
 -- ALTER TABLE public.cards ADD COLUMN IF NOT EXISTS temp_hp INTEGER;
+-- ALTER TABLE public.initiatives ADD COLUMN IF NOT EXISTS statuses JSONB DEFAULT '[]'::jsonb;
+-- ALTER TABLE public.sessions ADD COLUMN IF NOT EXISTS combat_round INTEGER DEFAULT 0;
 -- -----------------------------------------------------------------------------

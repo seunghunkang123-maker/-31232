@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase, isSupabaseConfigured } from './lib/supabase';
-import { Dices, Swords, User, LogOut, Plus, Trash2, Eye, EyeOff, BookOpen, Save, Image as ImageIcon, FileText, Database, Timer, Play, Pause, RotateCcw, X, Minus, FolderPlus, Folder, ChevronDown, ChevronRight, GripVertical, Settings2 } from 'lucide-react';
+import { Dices, Swords, User, LogOut, Plus, Trash2, Eye, EyeOff, BookOpen, Save, Image as ImageIcon, FileText, Database, Timer, Play, Pause, RotateCcw, X, Minus, FolderPlus, Folder, ChevronDown, ChevronRight, GripVertical, Settings2, Wand2, Loader2 } from 'lucide-react';
 import { ParsedText } from './components/ParsedText';
 import { GlobalTooltip, TooltipData } from './components/GlobalTooltip';
+import { DiceRoller } from './components/DiceRoller';
 import { keywordDictionary } from './lib/keywordDictionary';
 import { 
   DndContext, 
@@ -59,7 +60,7 @@ interface TimerData {
 
 interface SessionData { 
   id: string; name: string; dm_id: string; created_at: string; 
-  background_url?: string; timers?: TimerData[];
+  background_url?: string; timers?: TimerData[]; combat_round?: number;
 }
 
 interface PlayerSheet {
@@ -67,7 +68,7 @@ interface PlayerSheet {
   hp?: number; max_hp?: number; temp_hp?: number;
 }
 
-interface Initiative { id: string; name: string; score: number; is_active: boolean; }
+interface Initiative { id: string; name: string; score: number; is_active: boolean; statuses?: string[]; }
 
 // --- Helper Components ---
 function HPBar({ current, max, temp = 0, isDM, onUpdate, hideNumbers }: { current: number, max: number, temp?: number, isDM: boolean, onUpdate?: (updates: any) => void, hideNumbers?: boolean }) {
@@ -142,7 +143,12 @@ export default function App() {
   if (!isSupabaseConfigured) {
     return <SupabaseSetupScreen />;
   }
-  return <MainApp />;
+  return (
+    <>
+      <MainApp />
+      <GlobalDialogs />
+    </>
+  );
 }
 
 // --- Setup Screen ---
@@ -265,12 +271,179 @@ create policy "public_insert" on storage.objects for insert with check ( bucket_
   );
 }
 
+// --- Global UI Overrides ---
+let globalDialogCallback: any = null;
+
+export const showConfirm = (message: string): Promise<boolean> => {
+  return new Promise(resolve => {
+    if (globalDialogCallback) {
+      globalDialogCallback({ type: 'confirm', message, resolve });
+    } else {
+      resolve(window.confirm(message));
+    }
+  });
+};
+
+export const showPrompt = (message: string, defaultValue: string = ''): Promise<string | null> => {
+  return new Promise(resolve => {
+    if (globalDialogCallback) {
+      globalDialogCallback({ type: 'prompt', message, defaultValue, resolve });
+    } else {
+      resolve(window.prompt(message, defaultValue));
+    }
+  });
+};
+
+function GlobalDialogs() {
+  const [dialog, setDialog] = useState<any>(null);
+  useEffect(() => {
+     globalDialogCallback = setDialog;
+     return () => { globalDialogCallback = null; };
+  }, []);
+
+  if (!dialog) return null;
+
+  const handleClose = (result: any) => {
+    dialog.resolve(result);
+    setDialog(null);
+  };
+
+  const handleKeyboard = (e: React.KeyboardEvent) => {
+    if (e.key === 'Escape') handleClose(dialog.type === 'confirm' ? false : null);
+  };
+
+  return (
+    <div className="modal-overlay" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.8)', zIndex: 9999, display: 'flex', justifyContent: 'center', alignItems: 'center' }} onClick={() => handleClose(dialog.type === 'confirm' ? false : null)}>
+      <div className="card" style={{ width: '90%', maxWidth: '400px', padding: '24px', background: 'var(--bg-main)', border: '1px solid var(--border-color)', boxShadow: '0 10px 40px rgba(0,0,0,0.5)' }} onClick={e => e.stopPropagation()} onKeyDown={handleKeyboard}>
+        <h3 style={{ margin: '0 0 15px 0', color: 'var(--text-main)', fontSize: '1.2em' }}>
+          {dialog.type === 'confirm' ? '확인' : '입력'}
+        </h3>
+        <p style={{ margin: '0 0 20px 0', color: 'var(--text-muted)' }}>{dialog.message}</p>
+        
+        {dialog.type === 'prompt' && (
+          <input 
+            type="text" 
+            defaultValue={dialog.defaultValue} 
+            className="editor" 
+            style={{ width: '100%', marginBottom: '20px', padding: '10px' }} 
+            autoFocus 
+            onKeyDown={e => {
+              if (e.key === 'Enter') handleClose((e.target as HTMLInputElement).value);
+            }} 
+            id="global-prompt-input"
+          />
+        )}
+
+        <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+          <button className="btn" style={{ background: '#4b5563', padding: '8px 16px' }} onClick={() => handleClose(dialog.type === 'confirm' ? false : null)}>취소</button>
+          <button className="btn btn-action" style={{ background: dialog.type === 'confirm' ? '#ef4444' : '#3b82f6', padding: '8px 16px' }} onClick={() => handleClose(dialog.type === 'confirm' ? true : (document.getElementById('global-prompt-input') as HTMLInputElement)?.value || '')}>확인</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CampaignWiki({ isOpen, onClose, isDM }: { isOpen: boolean, onClose: () => void, isDM: boolean }) {
+  const [content, setContent] = useState('');
+  const [originalContent, setOriginalContent] = useState('');
+  const [wikiId, setWikiId] = useState<string | null>(null);
+  const [isEditing, setIsEditing] = useState(false);
+  const editorRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (isOpen) {
+      supabase!.from('wikis').select('*').limit(1).then(({ data }) => {
+        if (data && data.length > 0) {
+          setContent(data[0].content || '');
+          setOriginalContent(data[0].content || '');
+          setWikiId(data[0].id);
+        } else {
+          supabase!.from('wikis').insert([{ content: '새로운 캠페인 위키입니다.' }]).select().then(res => {
+            if (res.data && res.data.length > 0) {
+              setContent(res.data[0].content);
+              setOriginalContent(res.data[0].content);
+              setWikiId(res.data[0].id);
+            }
+          });
+        }
+      });
+    } else {
+      setIsEditing(false);
+    }
+  }, [isOpen]);
+
+  const handleSave = async () => {
+    if (!wikiId || !editorRef.current) return;
+    const newContent = editorRef.current.innerHTML;
+    await supabase!.from('wikis').update({ content: newContent }).eq('id', wikiId);
+    setContent(newContent);
+    setOriginalContent(newContent);
+    setIsEditing(false);
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="card-modal-overlay" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.7)', zIndex: 3000, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }} onClick={onClose}>
+      <div className="card" style={{ width: '100%', maxWidth: '800px', maxHeight: '90vh', background: 'var(--bg-main)', position: 'relative', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
+        <div className="card-header" style={{ marginBottom: '20px', padding: '10px 0', borderBottom: '1px solid var(--border-color)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <h2 style={{ fontSize: '1.4em', color: 'var(--accent-primary)', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}><BookOpen size={24} /> 캠페인 위키</h2>
+            <div style={{ display: 'flex', gap: '10px' }}>
+              {isDM && (
+                <>
+                  {isEditing ? (
+                    <>
+                      <button className="btn" style={{ background: '#4b5563' }} onClick={() => { setIsEditing(false); setContent(originalContent); }}>취소</button>
+                      <button className="btn btn-action" onClick={handleSave}>완료</button>
+                    </>
+                  ) : (
+                    <button className="btn btn-action" onClick={() => setIsEditing(true)}>편집</button>
+                  )}
+                </>
+              )}
+              <button className="btn" style={{ background: '#4b5563' }} onClick={onClose}>닫기</button>
+            </div>
+          </div>
+        </div>
+
+        <div className="card-body" style={{ flex: 1, overflowY: 'auto', paddingRight: '10px' }}>
+          {isEditing ? (
+            <>
+              <div className="toolbar" style={{ marginBottom: '10px', gap: '5px' }}>
+                <button onPointerDown={e => e.preventDefault()} onClick={() => document.execCommand('bold')} title="굵게"><b>B</b></button>
+                <button onPointerDown={e => e.preventDefault()} onClick={() => document.execCommand('italic')} title="기울임"><i>I</i></button>
+                <button onPointerDown={e => e.preventDefault()} onClick={() => document.execCommand('underline')} title="밑줄"><u>U</u></button>
+                <div style={{ width: '1px', height: '20px', background: 'var(--border-color)', margin: '0 5px' }} />
+                <button onPointerDown={e => e.preventDefault()} onClick={() => document.execCommand('fontSize', false, '3')} title="보통">T</button>
+                <button onPointerDown={e => e.preventDefault()} onClick={() => document.execCommand('fontSize', false, '5')} title="크게"><span style={{fontSize: '1.2em'}}>T</span></button>
+                <div style={{ width: '1px', height: '20px', background: 'var(--border-color)', margin: '0 5px' }} />
+                <button onPointerDown={e => e.preventDefault()} onClick={() => document.execCommand('foreColor', false, '#ef4444')} style={{ color: '#ef4444' }} title="빨강">●</button>
+                <button onPointerDown={e => e.preventDefault()} onClick={() => document.execCommand('foreColor', false, '#3b82f6')} style={{ color: '#3b82f6' }} title="파랑">●</button>
+                <button onPointerDown={e => e.preventDefault()} onClick={() => document.execCommand('foreColor', false, '#10b981')} style={{ color: '#10b981' }} title="초록">●</button>
+                <button onPointerDown={e => e.preventDefault()} onClick={() => document.execCommand('foreColor', false, '#f59e0b')} style={{ color: '#f59e0b' }} title="노랑">●</button>
+                <button onPointerDown={e => e.preventDefault()} onClick={() => document.execCommand('insertUnorderedList')} title="글머리 기호">List</button>
+              </div>
+              <div ref={editorRef} className="editor" contentEditable suppressContentEditableWarning dangerouslySetInnerHTML={{ __html: content }} style={{ minHeight: '300px' }} />
+            </>
+          ) : (
+            <div className="editor-content" style={{ minHeight: '300px', background: 'var(--card-bg)', padding: '20px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+              <ParsedText text={content} stats={{}} />
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // --- Main App Logic ---
 function MainApp() {
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [activeSession, setActiveSession] = useState<SessionData | null>(null);
   const [modalImg, setModalImg] = useState<string | null>(null);
+  const [showWiki, setShowWiki] = useState(false);
 
   useEffect(() => {
     const storedUser = localStorage.getItem('dnd_user');
@@ -329,6 +502,9 @@ function MainApp() {
           <Swords color="var(--accent-primary)" /> D&D 5e 세션 허브
         </h2>
         <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+          <button className="btn" style={{ background: 'var(--card-bg)', border: '1px solid var(--border-color)', color: 'var(--text-main)', padding: '6px 12px', display: 'flex', alignItems: 'center', gap: '6px' }} onClick={() => setShowWiki(true)}>
+            <BookOpen size={16} /> <span className="hidden-on-mobile">위키</span>
+          </button>
           <span style={{ color: 'var(--text-muted)', fontSize: '0.9em', marginRight: '10px' }}>
             {user.username} ({user.role === 'dm' ? '마스터' : '플레이어'})
           </span>
@@ -349,6 +525,7 @@ function MainApp() {
       )}
 
       <DiceRoller />
+      <CampaignWiki isOpen={showWiki} onClose={() => setShowWiki(false)} isDM={user?.role === 'dm'} />
 
       {modalImg && (
         <div id="image-modal" className="show" onClick={() => setModalImg(null)}>
@@ -471,7 +648,7 @@ function SessionLobby({ user, onSelect }: any) {
   };
 
   const handleDelete = async (id: string) => {
-    if (confirm('정말 삭제하시겠습니까? 관련 데이터가 모두 지워집니다.')) {
+    if (await showConfirm('정말 삭제하시겠습니까? 관련 데이터가 모두 지워집니다.')) {
       await supabase!.from('sessions').delete().eq('id', id);
       fetchSessions();
     }
@@ -563,14 +740,108 @@ function SortableDMCard({ card, updateCard, deleteCard, openModal, isListMode }:
   );
 }
 
+function MonsterGeneratorModal({ onClose, targetFolder, addCard }: any) {
+  const [prompt, setPrompt] = useState('');
+  const [isGenerating, setIsGenerating] = useState(false);
+
+  const presets = [
+    { name: '고블린', hp: 7, ac: 15, speed: '30ft', str: 8, dex: 14, con: 10, int: 10, wis: 8, cha: 8, actions: '<b>시미터:</b> 근접 무기 공격: +4 명중, 1d6+2 베기 피해.<br><b>단궁:</b> 원거리 무기 공격: +4 명중, 사거리 80/320ft, 1d6+2 관통 피해.' },
+    { name: '스켈레톤', hp: 13, ac: 13, speed: '30ft', str: 10, dex: 14, con: 15, int: 6, wis: 8, cha: 5, actions: '<b>단검:</b> 근접 피해: +4 명중, 1d4+2 찌르기 피해.<br><b>단궁:</b> 원거리 피해: +4 명중, 1d6+2 관통 피해.' },
+    { name: '대형 거미', hp: 11, ac: 14, speed: '30ft, 등반 30ft', str: 14, dex: 16, con: 12, int: 2, wis: 11, cha: 4, actions: '<b>물기:</b> +5 명중, 1d6+3 관통피해 및 2d8 독 피해(건강 DC 11 절반 피해).<br><b>거미줄:</b> +5 명중, 사거리 30/60ft, 적중시 속박됨.' },
+  ];
+
+  const handlePreset = (p: any) => {
+    addCard('statblock', targetFolder, {
+      title: p.name,
+      hp: p.hp,
+      max_hp: p.hp,
+      stats: { str: p.str, dex: p.dex, con: p.con, int: p.int, wis: p.wis, cha: p.cha },
+      content: `<b>방어도</b> ${p.ac}<br><b>이동 속도</b> ${p.speed}<hr><b>행동</b><br>${p.actions}`
+    });
+    onClose();
+  };
+
+  const handleAIGenerate = async () => {
+    if (!prompt) return;
+    setIsGenerating(true);
+    try {
+      const res = await fetch('/api/generate-monster', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt })
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      addCard('statblock', targetFolder, data);
+      onClose();
+    } catch (e: any) {
+      alert("생성 실패: 백엔드 서버(Express)가 켜져있고 API 키가 설정되었는지 확인하세요.");
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  return (
+    <div className="card-modal-overlay" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.7)', zIndex: 1000, display: 'flex', justifyContent: 'center', alignItems: 'center' }} onClick={onClose}>
+      <div className="card" style={{ width: '90%', maxWidth: '500px', background: 'var(--bg-main)', padding: '24px' }} onClick={e => e.stopPropagation()}>
+        <h3 style={{ marginTop: 0, color: 'var(--accent-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <Settings2 size={20} /> 몬스터 메이커
+        </h3>
+        
+        <div style={{ marginBottom: '20px' }}>
+          <label style={{ fontWeight: 'bold', fontSize: '0.9em', color: 'var(--text-muted)' }}>✨ AI 자동 생성</label>
+          <textarea 
+            className="editor"
+            placeholder="(예: 불을 뿜고 날아다니는 레벨 3 용족 몬스터)"
+            value={prompt}
+            onChange={e => setPrompt(e.target.value)}
+            style={{ width: '100%', minHeight: '80px', marginTop: '8px', padding: '12px' }}
+          />
+          <button 
+            className="btn btn-action" 
+            style={{ width: '100%', marginTop: '10px', background: '#ec4899', display: 'flex', justifyContent: 'center', gap: '8px' }}
+            onClick={handleAIGenerate}
+            disabled={isGenerating}
+          >
+            {isGenerating ? <Loader2 size={18} className="animate-spin" /> : <Wand2 size={18} />}
+            {isGenerating ? "생성 중..." : "AI로 생성하기"}
+          </button>
+        </div>
+
+        <hr style={{ borderColor: 'var(--border-color)', margin: '20px 0' }} />
+
+        <div>
+           <label style={{ fontWeight: 'bold', fontSize: '0.9em', color: 'var(--text-muted)', marginBottom: '10px', display: 'block' }}>📋 프리셋으로 생성</label>
+           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px' }}>
+             {presets.map(p => (
+               <button key={p.name} className="btn" style={{ background: 'var(--card-bg)', color: 'var(--text-main)', border: '1px solid var(--border-color)' }} onClick={() => handlePreset(p)}>
+                 {p.name}
+               </button>
+             ))}
+             <button className="btn" style={{ background: 'var(--card-bg)', color: 'var(--text-main)', border: '1px dashed var(--border-color)' }} onClick={() => { addCard('statblock', targetFolder); onClose(); }}>
+               + 빈 스탯블록
+             </button>
+           </div>
+        </div>
+
+        <button className="btn" style={{ width: '100%', marginTop: '20px', background: '#4b5563' }} onClick={onClose}>취소</button>
+      </div>
+    </div>
+  );
+}
+
 // --- DM Dashboard ---
 function DMDashboard({ session, user, onBack, openModal, setActiveSession }: any) {
   const [cards, setCards] = useState<CardData[]>([]);
   const [folders, setFolders] = useState<FolderData[]>([]);
   const [showLoadModal, setShowLoadModal] = useState(false);
+  const [showGenModal, setShowGenModal] = useState(false);
+  const [typeFilter, setTypeFilter] = useState<'all' | 'statblock' | 'image' | 'text'>('all');
+  const [searchTerm, setSearchTerm] = useState('');
   const [isListMode, setIsListMode] = useState(false);
   const [savedMonsters, setSavedMonsters] = useState<any[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [genTargetFolder, setGenTargetFolder] = useState<string | null>(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -690,7 +961,7 @@ function DMDashboard({ session, user, onBack, openModal, setActiveSession }: any
     };
   }, [session.id]);
 
-  const addCard = async (type: CardType, folderId?: string | null) => {
+  const addCard = async (type: CardType, folderId?: string | null, customData?: any) => {
     const lastCard = cards.filter(c => c.folder_id === (folderId || null)).sort((a,b) => (b.sort_order || 0) - (a.sort_order || 0))[0];
     const newOrder = lastCard ? (lastCard.sort_order || 0) + 1 : 0;
 
@@ -710,6 +981,16 @@ function DMDashboard({ session, user, onBack, openModal, setActiveSession }: any
       newCard.max_hp = 10;
     }
 
+    if (customData) {
+      if (customData.title) newCard.title = customData.title;
+      if (customData.hp !== undefined) {
+        newCard.hp = customData.hp;
+        newCard.max_hp = customData.max_hp || customData.hp;
+      }
+      if (customData.stats) newCard.stats = { ...newCard.stats, ...customData.stats };
+      if (customData.content) newCard.content = customData.content;
+    }
+
     await supabase!.from('cards').insert([newCard]);
     fetchCards();
   };
@@ -721,7 +1002,7 @@ function DMDashboard({ session, user, onBack, openModal, setActiveSession }: any
   };
 
   const deleteCard = async (id: string) => {
-    if (confirm('정말 삭제하시겠습니까?')) {
+    if (await showConfirm('정말 삭제하시겠습니까?')) {
       const { error } = await supabase!.from('cards').delete().eq('id', id);
       if (!error) setCards(prev => prev.filter(c => c.id !== id));
       else fetchCards();
@@ -729,7 +1010,7 @@ function DMDashboard({ session, user, onBack, openModal, setActiveSession }: any
   };
 
   const addFolder = async () => {
-    const name = prompt('폴더 이름을 입력하세요:');
+    const name = await showPrompt('폴더 이름을 입력하세요:');
     if (!name) return;
     
     const lastFolder = [...folders].sort((a,b) => b.sort_order - a.sort_order)[0];
@@ -750,7 +1031,7 @@ function DMDashboard({ session, user, onBack, openModal, setActiveSession }: any
   };
 
   const deleteFolder = async (id: string) => {
-    if (confirm('폴더를 삭제하시겠습니까? 폴더 안의 카드들은 폴더 밖으로 이동됩니다.')) {
+    if (await showConfirm('폴더를 삭제하시겠습니까? 폴더 안의 카드들은 폴더 밖으로 이동됩니다.')) {
       await supabase!.from('cards').update({ folder_id: null }).eq('folder_id', id);
       await supabase!.from('folders').delete().eq('id', id);
       fetchFolders();
@@ -873,6 +1154,15 @@ function DMDashboard({ session, user, onBack, openModal, setActiveSession }: any
     }
   };
 
+  const filteredCards = cards
+    .filter(c => typeFilter === 'all' || c.type === typeFilter)
+    .filter(c => {
+      const term = searchTerm.toLowerCase();
+      return !term || 
+        (c.title && c.title.toLowerCase().includes(term)) || 
+        (c.content && c.content.toLowerCase().includes(term));
+    });
+
   return (
     <div className="main-layout">
       <div className="dashboard" style={{ flex: 1, minWidth: 0, padding: '20px 0', margin: 0 }}>
@@ -904,11 +1194,24 @@ function DMDashboard({ session, user, onBack, openModal, setActiveSession }: any
           <TimerManager timers={session.timers || []} isDM={true} onUpdate={updateTimer} onDelete={deleteTimer} />
         </div>
         <div id="init-section">
-          <InitiativeTracker sessionId={session.id} isDM={true} />
+          <InitiativeTracker session={session} isDM={true} onUpdateSession={updateSession} />
         </div>
 
-        <div id="card-section" className="toolbar" style={{ marginBottom: '30px', justifyContent: 'center', background: 'transparent', border: 'none', gap: '8px', flexWrap: 'wrap' }}>
-          <button className="btn btn-action" style={{background: '#8b5cf6', padding: '8px 12px'}} onClick={addFolder}><FolderPlus size={16} style={{verticalAlign:'middle'}}/> <span className="text-sm">폴더 생성</span></button>
+        <div id="card-section" className="toolbar" style={{ marginBottom: '30px', justifyContent: 'space-between', background: 'transparent', border: 'none', gap: '8px', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+            <button className="btn btn-action" style={{background: '#8b5cf6', padding: '8px 12px'}} onClick={addFolder}><FolderPlus size={16} style={{verticalAlign:'middle'}}/> <span className="text-sm">폴더 생성</span></button>
+            <div className="search-bar" style={{ display: 'flex', alignItems: 'center', background: 'var(--bg-main)', padding: '4px 12px', borderRadius: '20px', border: '1px solid var(--border-color)' }}>
+              <input type="text" placeholder="검색..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} style={{ background: 'transparent', border: 'none', color: 'var(--text-main)', outline: 'none', width: '120px' }} />
+              {searchTerm && <X size={14} style={{ cursor: 'pointer', color: 'var(--text-muted)' }} onClick={() => setSearchTerm('')} />}
+            </div>
+            <div style={{ display: 'flex', gap: '4px', background: 'var(--card-bg)', borderRadius: '20px', padding: '2px', border: '1px solid var(--border-color)' }}>
+              {(['all', 'statblock', 'image', 'text'] as const).map(t => (
+                <button key={t} className={`btn ${typeFilter === t ? 'active' : ''}`} style={{ padding: '4px 10px', fontSize: '0.8em', borderRadius: '15px', background: typeFilter === t ? 'var(--accent-primary)' : 'transparent', color: typeFilter === t ? '#fff' : 'var(--text-muted)', border: 'none' }} onClick={() => setTypeFilter(t)}>
+                  {t === 'all' ? '전체' : t === 'statblock' ? '몬스터' : t === 'image' ? '이미지' : '메모'}
+                </button>
+              ))}
+            </div>
+          </div>
           <div style={{ color: 'var(--text-muted)', fontSize: '0.8em', display: 'flex', alignItems: 'center', gap: '8px', background: 'var(--card-bg)', padding: '4px 10px', borderRadius: '20px', border: '1px solid var(--border-color)' }}>
             <span>F {folders.length} / C {cards.length}</span>
             <button 
@@ -920,7 +1223,7 @@ function DMDashboard({ session, user, onBack, openModal, setActiveSession }: any
             </button>
           </div>
           <button className="btn btn-action" onClick={() => { setShowLoadModal(true); fetchSavedMonsters(); }} style={{padding: '8px 12px'}}><Database size={16} style={{verticalAlign:'middle'}}/> <span className="text-sm">불러오기</span></button>
-          <button className="btn btn-add" onClick={() => addCard('statblock')} style={{padding: '8px 12px'}}><User size={16} style={{verticalAlign:'middle'}}/> <span className="text-sm">+몬스터</span></button>
+          <button className="btn btn-add" onClick={() => { setGenTargetFolder(null); setShowGenModal(true); }} style={{padding: '8px 12px', background: '#ec4899'}}><Wand2 size={16} style={{verticalAlign:'middle'}}/> <span className="text-sm">+몬스터 메이커</span></button>
           <button className="btn btn-add" onClick={() => addCard('image')} style={{padding: '8px 12px'}}><ImageIcon size={16} style={{verticalAlign:'middle'}}/> <span className="text-sm">+이미지</span></button>
           <button className="btn btn-add" onClick={() => addCard('text')} style={{padding: '8px 12px'}}><FileText size={16} style={{verticalAlign:'middle'}}/> <span className="text-sm">+메모</span></button>
         </div>
@@ -932,7 +1235,7 @@ function DMDashboard({ session, user, onBack, openModal, setActiveSession }: any
                 <FolderSection 
                   key={folder.id} 
                   folder={folder} 
-                  cards={cards.filter(c => c.folder_id === folder.id)} 
+                  cards={filteredCards.filter(c => c.folder_id === folder.id)} 
                   updateCard={updateCard}
                   deleteCard={deleteCard}
                   openModal={openModal}
@@ -940,6 +1243,8 @@ function DMDashboard({ session, user, onBack, openModal, setActiveSession }: any
                   deleteFolder={deleteFolder}
                   addCard={addCard}
                   isListMode={isListMode}
+                  setShowGenModal={setShowGenModal}
+                  setGenTargetFolder={setGenTargetFolder}
                 />
               ))}
               
@@ -949,12 +1254,12 @@ function DMDashboard({ session, user, onBack, openModal, setActiveSession }: any
                   <Folder size={20} style={{ color: 'var(--text-muted)' }} />
                   <h3 style={{ margin: 0, fontSize: '1.2em' }}>기타 카드 (분류되지 않음)</h3>
                 </div>
-                <SortableContext items={cards.filter(c => !c.folder_id).map(c => c.id)} strategy={rectSortingStrategy}>
+                <SortableContext items={filteredCards.filter(c => !c.folder_id).map(c => c.id)} strategy={rectSortingStrategy}>
                   <div className="card-container" style={isListMode ? { gridTemplateColumns: '1fr', gap: '8px' } : {}}>
-                    {cards.filter(c => !c.folder_id).map(card => (
+                    {filteredCards.filter(c => !c.folder_id).map(card => (
                       <SortableDMCard key={card.id} card={card} updateCard={updateCard} deleteCard={deleteCard} openModal={openModal} isListMode={isListMode} />
                     ))}
-                    {cards.filter(c => !c.folder_id).length === 0 && <p style={{ color: 'var(--text-muted)', textAlign: 'center', width: '100%', padding: '20px' }}>분류되지 않은 카드가 없습니다.</p>}
+                    {filteredCards.filter(c => !c.folder_id).length === 0 && <p style={{ color: 'var(--text-muted)', textAlign: 'center', width: '100%', padding: '20px' }}>분류되지 않은 카드가 없습니다.</p>}
                   </div>
                 </SortableContext>
               </div>
@@ -990,12 +1295,20 @@ function DMDashboard({ session, user, onBack, openModal, setActiveSession }: any
             </div>
           </div>
         )}
+
+        {showGenModal && (
+          <MonsterGeneratorModal 
+            onClose={() => setShowGenModal(false)} 
+            targetFolder={genTargetFolder} 
+            addCard={addCard} 
+          />
+        )}
       </div>
     </div>
   );
 }
 
-function FolderSection({ folder, cards, updateCard, deleteCard, openModal, updateFolder, deleteFolder, addCard, isListMode }: any) {
+function FolderSection({ folder, cards, updateCard, deleteCard, openModal, updateFolder, deleteFolder, addCard, isListMode, setShowGenModal, setGenTargetFolder }: any) {
   const [isExpanded, setIsExpanded] = useState(false);
   const {
     attributes,
@@ -1030,6 +1343,7 @@ function FolderSection({ folder, cards, updateCard, deleteCard, openModal, updat
           />
         </div>
         <div style={{ display: 'flex', gap: '8px' }}>
+          <button className="btn" style={{ background: 'rgba(255,255,255,0.2)', padding: '6px 10px', fontSize: '0.8em', color: '#fbcfe8', border: '1px solid #fbcfe8' }} onClick={() => { setGenTargetFolder(folder.id); setShowGenModal(true); }}>+메이커</button>
           <button className="btn" style={{ background: 'rgba(255,255,255,0.2)', padding: '6px 10px', fontSize: '0.8em' }} onClick={() => addCard('statblock', folder.id)}>+ 몬스터</button>
           <button className="btn" style={{ background: 'rgba(255,255,255,0.2)', padding: '6px 10px', fontSize: '0.8em' }} onClick={() => addCard('image', folder.id)}>+ 이미지</button>
           <button className="btn" style={{ background: 'rgba(255,255,255,0.2)', padding: '6px 10px', fontSize: '0.8em' }} onClick={() => addCard('text', folder.id)}>+ 텍스트</button>
@@ -1364,10 +1678,10 @@ function DMCard({ card, updateCard, deleteCard, openModal, isListMode }: any) {
             {(card.type === 'statblock' || card.type === 'text') && (
               <div style={{ background: 'var(--card-bg)', borderRadius: '8px', border: '1px solid var(--border-color)', overflow: 'hidden' }}>
                 <div className="toolbar" style={{ border: 'none', borderBottom: '1px solid var(--border-color)', margin: 0, borderRadius: 0, background: 'var(--stat-bg)', flexWrap: 'wrap', height: 'auto', padding: '4px' }}>
-                  <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('bold')}><b>B</b></button>
-                  <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('italic')}><i>I</i></button>
-                  <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('underline')}><u>U</u></button>
-                  <button onMouseDown={e => {
+                  <button onPointerDown={e => e.preventDefault()} onClick={() => document.execCommand('bold')}><b>B</b></button>
+                  <button onPointerDown={e => e.preventDefault()} onClick={() => document.execCommand('italic')}><i>I</i></button>
+                  <button onPointerDown={e => e.preventDefault()} onClick={() => document.execCommand('underline')}><u>U</u></button>
+                  <button onPointerDown={e => {
                     e.preventDefault();
                     const selection = window.getSelection();
                     if (!selection || selection.rangeCount === 0 || selection.isCollapsed) return alert('단어를 선택해주세요.');
@@ -1392,7 +1706,7 @@ function DMCard({ card, updateCard, deleteCard, openModal, isListMode }: any) {
                       }, 10);
                     }
                   }} style={{ background: 'var(--accent-primary)', color: 'white', border: 'none', padding: '4px 8px', fontSize: '0.8em' }}>+ 툴팁</button>
-                  <button onMouseDown={e => e.preventDefault()} onClick={() => setIsPreviewMode(!isPreviewMode)} style={{ marginLeft: 'auto', fontSize: '0.8em' }}>
+                  <button onPointerDown={e => e.preventDefault()} onClick={() => setIsPreviewMode(!isPreviewMode)} style={{ marginLeft: 'auto', fontSize: '0.8em' }}>
                     {isPreviewMode ? '✏️ 편집' : '👁️ 확인'}
                   </button>
                 </div>
@@ -1691,6 +2005,7 @@ function PlayerCard({ card, openModal, handleEditorMouseOver, handleEditorMouseO
 // --- Player Dashboard ---
 function PlayerDashboard({ session, user, onBack, openModal }: any) {
   const [cards, setCards] = useState<CardData[]>([]);
+  const [folders, setFolders] = useState<FolderData[]>([]);
   const [sheet, setSheet] = useState<PlayerSheet | null>(null);
   const [showLoadModal, setShowLoadModal] = useState(false);
   const [savedSheets, setSavedSheets] = useState<any[]>([]);
@@ -1765,8 +2080,13 @@ function PlayerDashboard({ session, user, onBack, openModal }: any) {
   const playerStatsContainerRef = useRef<HTMLDivElement>(null);
 
   const fetchCards = async () => {
-    const { data } = await supabase!.from('cards').select('*').eq('session_id', session.id).order('created_at', { ascending: false });
+    const { data } = await supabase!.from('cards').select('*').eq('session_id', session.id).order('sort_order', { ascending: true }).order('created_at', { ascending: false });
     if (data) setCards(data);
+  };
+
+  const fetchFolders = async () => {
+    const { data } = await supabase!.from('folders').select('*').eq('session_id', session.id).order('sort_order', { ascending: true });
+    if (data) setFolders(data);
   };
 
   const fetchSheet = async () => {
@@ -1789,9 +2109,11 @@ function PlayerDashboard({ session, user, onBack, openModal }: any) {
 
   useEffect(() => {
     fetchCards();
+    fetchFolders();
     fetchSheet();
     const channel = supabase!.channel('player_sync')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'cards', filter: `session_id=eq.${session.id}` }, fetchCards)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'folders', filter: `session_id=eq.${session.id}` }, fetchFolders)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'player_sheets', filter: `session_id=eq.${session.id}` }, fetchSheet)
       .subscribe();
     return () => { supabase!.removeChannel(channel); };
@@ -1937,7 +2259,7 @@ function PlayerDashboard({ session, user, onBack, openModal }: any) {
 
       <div className={activeTab !== 'combat' ? 'hidden-on-mobile' : ''}>
         <TimerManager timers={session.timers || []} isDM={false} />
-        <InitiativeTracker sessionId={session.id} isDM={false} />
+        <InitiativeTracker session={session} isDM={false} />
       </div>
 
       {/* Mobile-only Section Switcher */}
@@ -1971,9 +2293,35 @@ function PlayerDashboard({ session, user, onBack, openModal }: any) {
         {/* Desktop or Cards Tab */}
         <div className={`card-container ${activeTab !== 'cards' ? 'hidden-on-mobile' : ''}`} style={{ flex: '1 1 500px', display: 'flex', flexDirection: 'column' }}>
           <h3 style={{ width: '100%', color: 'var(--accent-primary)', borderBottom: '1px solid var(--border-color)', paddingBottom: '10px', marginBottom: '20px' }}>공유된 정보</h3>
-          {cards.map((card: CardData) => (
-            <PlayerCard key={card.id} card={card} openModal={openModal} handleEditorMouseOver={handleEditorMouseOver} handleEditorMouseOut={handleEditorMouseOut} clearTooltipTimeout={clearTooltipTimeout} setTooltipData={setTooltipData} />
-          ))}
+          {folders.map(folder => {
+            const folderCards = cards.filter(c => c.folder_id === folder.id);
+            if (folderCards.length === 0) return null;
+            return (
+              <div key={folder.id} style={{ marginBottom: '30px' }}>
+                <h4 style={{ color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '15px' }}><Folder size={18} /> {folder.name}</h4>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                  {folderCards.map(card => (
+                    <PlayerCard key={card.id} card={card} openModal={openModal} handleEditorMouseOver={handleEditorMouseOver} handleEditorMouseOut={handleEditorMouseOut} clearTooltipTimeout={clearTooltipTimeout} setTooltipData={setTooltipData} />
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+          
+          {(() => {
+            const uncategorized = cards.filter(c => !c.folder_id);
+            if (uncategorized.length === 0 && folders.length > 0) return null;
+            return (
+              <div style={{ marginBottom: '30px' }}>
+                {folders.some(f => cards.some(c => c.folder_id === f.id)) && <h4 style={{ color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '15px' }}><Folder size={18} /> 기타</h4>}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                  {uncategorized.map(card => (
+                    <PlayerCard key={card.id} card={card} openModal={openModal} handleEditorMouseOver={handleEditorMouseOver} handleEditorMouseOut={handleEditorMouseOut} clearTooltipTimeout={clearTooltipTimeout} setTooltipData={setTooltipData} />
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
           {cards.length === 0 && <p style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '40px' }}>아직 공유된 카드가 없습니다.</p>}
         </div>
 
@@ -2006,13 +2354,13 @@ function PlayerDashboard({ session, user, onBack, openModal }: any) {
             </div>
 
             <div className="toolbar" style={{ marginBottom: '10px' }}>
-              <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('bold')}><b>B</b></button>
-              <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('italic')}><i>I</i></button>
-              <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('underline')}><u>U</u></button>
-              <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('foreColor', false, '#ef4444')} style={{ color: 'var(--accent-danger)' }}>Red</button>
-              <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('foreColor', false, '#3b82f6')} style={{ color: 'var(--accent-primary)' }}>Blue</button>
-              <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('foreColor', false, '#000000')} style={{ color: '#000000', fontWeight: 'bold' }}>Black</button>
-              <button onMouseDown={e => {
+              <button onPointerDown={e => e.preventDefault()} onClick={() => document.execCommand('bold')}><b>B</b></button>
+              <button onPointerDown={e => e.preventDefault()} onClick={() => document.execCommand('italic')}><i>I</i></button>
+              <button onPointerDown={e => e.preventDefault()} onClick={() => document.execCommand('underline')}><u>U</u></button>
+              <button onPointerDown={e => e.preventDefault()} onClick={() => document.execCommand('foreColor', false, '#ef4444')} style={{ color: 'var(--accent-danger)' }}>Red</button>
+              <button onPointerDown={e => e.preventDefault()} onClick={() => document.execCommand('foreColor', false, '#3b82f6')} style={{ color: 'var(--accent-primary)' }}>Blue</button>
+              <button onPointerDown={e => e.preventDefault()} onClick={() => document.execCommand('foreColor', false, '#000000')} style={{ color: '#000000', fontWeight: 'bold' }}>Black</button>
+              <button onPointerDown={e => {
                 e.preventDefault();
                 const selection = window.getSelection();
                 if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
@@ -2042,7 +2390,7 @@ function PlayerDashboard({ session, user, onBack, openModal }: any) {
                   }, 10);
                 }
               }} style={{ background: 'var(--bg-secondary)', color: 'var(--text-main)' }}>📝 툴팁 추가</button>
-              <button onMouseDown={e => e.preventDefault()} onClick={() => setIsPreviewMode(!isPreviewMode)} style={{ marginLeft: 'auto', background: isPreviewMode ? 'var(--accent-primary)' : 'var(--bg-main)', color: isPreviewMode ? '#fff' : 'var(--text-main)', border: '1px solid var(--border-color)' }}>
+              <button onPointerDown={e => e.preventDefault()} onClick={() => setIsPreviewMode(!isPreviewMode)} style={{ marginLeft: 'auto', background: isPreviewMode ? 'var(--accent-primary)' : 'var(--bg-main)', color: isPreviewMode ? '#fff' : 'var(--text-main)', border: '1px solid var(--border-color)' }}>
                 {isPreviewMode ? '✏️ 편집 모드' : '👁️ 미리보기 (키워드 확인)'}
               </button>
             </div>
@@ -2105,8 +2453,8 @@ function PlayerDashboard({ session, user, onBack, openModal }: any) {
             <p style={{ fontSize: '0.9em', color: 'var(--text-muted)' }}>다른 세션에서 사용했던 캐릭터 정보를 덮어씌웁니다.</p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '15px' }}>
               {savedSheets.map(s => (
-                <div key={s.id} className="init-item" style={{ cursor: 'pointer' }} onClick={() => {
-                  if (confirm(`'${s.character_name}' 캐릭터 정보를 현재 시트에 덮어씌우시겠습니까?`)) {
+                <div key={s.id} className="init-item" style={{ cursor: 'pointer' }} onClick={async () => {
+                  if (await showConfirm(`'${s.character_name}' 캐릭터 정보를 현재 시트에 덮어씌우시겠습니까?`)) {
                     updateSheet({ character_name: s.character_name, content: s.content, stats: s.stats });
                     setShowLoadModal(false);
                   }
@@ -2138,27 +2486,28 @@ function PlayerDashboard({ session, user, onBack, openModal }: any) {
 }
 
 // --- Initiative Tracker ---
-function InitiativeTracker({ sessionId, isDM }: { sessionId: string, isDM: boolean }) {
+function InitiativeTracker({ session, isDM, onUpdateSession }: { session: SessionData, isDM: boolean, onUpdateSession?: (u: any) => void }) {
   const [initiatives, setInitiatives] = useState<Initiative[]>([]);
   const [newName, setNewName] = useState('');
   const [newScore, setNewScore] = useState('');
+  const [addingStatusId, setAddingStatusId] = useState<string | null>(null);
 
   const fetchInit = async () => {
-    const { data } = await supabase!.from('initiatives').select('*').eq('session_id', sessionId).order('score', { ascending: false });
+    const { data } = await supabase!.from('initiatives').select('*').eq('session_id', session.id).order('score', { ascending: false });
     if (data) setInitiatives(data);
   };
 
   useEffect(() => {
     fetchInit();
     const channel = supabase!.channel('init_sync')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'initiatives', filter: `session_id=eq.${sessionId}` }, fetchInit)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'initiatives', filter: `session_id=eq.${session.id}` }, fetchInit)
       .subscribe();
     return () => { supabase!.removeChannel(channel); };
-  }, [sessionId]);
+  }, [session.id]);
 
   const handleAdd = async () => {
     if (!newName || !newScore) return;
-    await supabase!.from('initiatives').insert([{ session_id: sessionId, name: newName, score: parseInt(newScore) }]);
+    await supabase!.from('initiatives').insert([{ session_id: session.id, name: newName, score: parseInt(newScore), statuses: [] }]);
     setNewName(''); setNewScore('');
     fetchInit();
   };
@@ -2170,8 +2519,9 @@ function InitiativeTracker({ sessionId, isDM }: { sessionId: string, isDM: boole
 
   const handleStartCombat = async () => {
     if (initiatives.length === 0) return;
-    await supabase!.from('initiatives').update({ is_active: false }).eq('session_id', sessionId);
+    await supabase!.from('initiatives').update({ is_active: false }).eq('session_id', session.id);
     await supabase!.from('initiatives').update({ is_active: true }).eq('id', initiatives[0].id);
+    if (onUpdateSession) onUpdateSession({ combat_round: 1 });
     fetchInit();
   };
 
@@ -2181,21 +2531,45 @@ function InitiativeTracker({ sessionId, isDM }: { sessionId: string, isDM: boole
     const nextIdx = activeIdx === -1 || activeIdx === initiatives.length - 1 ? 0 : activeIdx + 1;
     
     // Reset all, then set next
-    await supabase!.from('initiatives').update({ is_active: false }).eq('session_id', sessionId);
+    await supabase!.from('initiatives').update({ is_active: false }).eq('session_id', session.id);
     await supabase!.from('initiatives').update({ is_active: true }).eq('id', initiatives[nextIdx].id);
+    if (nextIdx === 0 && onUpdateSession) {
+      onUpdateSession({ combat_round: (session.combat_round || 0) + 1 });
+    }
     fetchInit();
   };
 
   const handleClear = async () => {
-    if (confirm('전투를 종료하고 모든 우선권을 삭제하시겠습니까?')) {
-      await supabase!.from('initiatives').delete().eq('session_id', sessionId);
+    if (await showConfirm('전투를 종료하고 모든 우선권을 삭제하시겠습니까?')) {
+      await supabase!.from('initiatives').delete().eq('session_id', session.id);
+      if (onUpdateSession) onUpdateSession({ combat_round: 0 });
+      fetchInit();
+    }
+  };
+
+  const addStatus = async (id: string, status: string) => {
+    if (!status) return;
+    const target = initiatives.find(i => i.id === id);
+    if (target) {
+      const newStatuses = [...(target.statuses || []), status];
+      await supabase!.from('initiatives').update({ statuses: newStatuses }).eq('id', id);
+      fetchInit();
+    }
+  };
+
+  const removeStatus = async (id: string, index: number) => {
+    const target = initiatives.find(i => i.id === id);
+    if (target && target.statuses) {
+      const newStatuses = [...target.statuses];
+      newStatuses.splice(index, 1);
+      await supabase!.from('initiatives').update({ statuses: newStatuses }).eq('id', id);
       fetchInit();
     }
   };
 
   const hasActive = initiatives.some(i => i.is_active);
 
-  if (!isDM && !hasActive) {
+  if (!isDM && !hasActive && initiatives.length === 0) {
     return null;
   }
 
@@ -2205,6 +2579,17 @@ function InitiativeTracker({ sessionId, isDM }: { sessionId: string, isDM: boole
         <h3 style={{ margin: 0, color: 'var(--accent-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
           <Swords size={20}/> 전투 우선권 (Initiative) {hasActive && <span style={{fontSize: '0.6em', color: 'var(--accent-danger)'}}>⚔️ 전투 진행 중</span>}
         </h3>
+        <div style={{ fontSize: '1.2em', fontWeight: 'bold', color: 'var(--text-main)' }}>Round {session.combat_round || 0}</div>
+      </div>
+      
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '15px' }}>
+        {isDM && (
+          <div style={{ display: 'flex', gap: '5px' }}>
+            <input type="text" placeholder="이름" value={newName} onChange={e => setNewName(e.target.value)} style={{ padding: '8px', borderRadius: '6px', border: '1px solid var(--border-color)', background: 'var(--bg-main)', color: 'var(--text-main)', width: '120px' }} />
+            <input type="number" placeholder="수치" value={newScore} onChange={e => setNewScore(e.target.value)} style={{ width: '70px', padding: '8px', borderRadius: '6px', border: '1px solid var(--border-color)', background: 'var(--bg-main)', color: 'var(--text-main)' }} onKeyDown={e => e.key === 'Enter' && handleAdd()} />
+            <button className="btn btn-add" onClick={handleAdd}>추가</button>
+          </div>
+        )}
         {isDM && (
           <div>
             {!hasActive ? (
@@ -2212,25 +2597,42 @@ function InitiativeTracker({ sessionId, isDM }: { sessionId: string, isDM: boole
             ) : (
               <button className="btn btn-action" onClick={handleNextTurn} style={{ marginRight: '10px' }}>다음 턴 ⏭️</button>
             )}
-            <button className="btn btn-danger" onClick={handleClear}>전투 종료</button>
+            <button className="btn btn-danger" onClick={handleClear}>종료</button>
           </div>
         )}
       </div>
 
-      {isDM && (
-        <div style={{ display: 'flex', gap: '10px', marginTop: '15px' }}>
-          <input type="text" placeholder="이름 (캐릭터/몬스터)" value={newName} onChange={e => setNewName(e.target.value)} style={{ flex: 1, padding: '10px', borderRadius: '6px', border: '1px solid var(--border-color)', background: 'var(--bg-main)', color: 'var(--text-main)' }} />
-          <input type="number" placeholder="우선권 수치" value={newScore} onChange={e => setNewScore(e.target.value)} style={{ width: '100px', padding: '10px', borderRadius: '6px', border: '1px solid var(--border-color)', background: 'var(--bg-main)', color: 'var(--text-main)' }} onKeyDown={e => e.key === 'Enter' && handleAdd()} />
-          <button className="btn btn-add" onClick={handleAdd}>추가</button>
-        </div>
-      )}
-
       <div className="init-list">
         {initiatives.map(init => (
-          <div key={init.id} className={`init-item ${init.is_active ? 'active' : ''}`}>
-            <div className="init-score">{init.score}</div>
-            <div className="init-name">{init.name} {init.is_active && <span style={{ fontSize: '0.8em', color: 'var(--accent-success)', marginLeft: '10px' }}>◀ 현재 턴</span>}</div>
-            {isDM && <button className="btn btn-danger" style={{ padding: '6px 10px' }} onClick={() => handleDelete(init.id)}><Trash2 size={14}/></button>}
+          <div key={init.id} className={`init-item ${init.is_active ? 'active' : ''}`} style={{ flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', width: '100%', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                <div className="init-score">{init.score}</div>
+                <div className="init-name">{init.name} {init.is_active && <span style={{ fontSize: '0.8em', color: 'var(--accent-success)', marginLeft: '10px' }}>◀ 현재 턴</span>}</div>
+              </div>
+              {isDM && (
+                <div style={{ display: 'flex', gap: '5px' }}>
+                  <button className="btn" style={{ padding: '2px 6px', fontSize: '0.8em', background: 'var(--card-bg)', border: '1px solid var(--border-color)' }} onClick={() => setAddingStatusId(addingStatusId === init.id ? null : init.id)}>상태+</button>
+                  <button className="btn btn-danger" style={{ padding: '6px 10px' }} onClick={() => handleDelete(init.id)}><Trash2 size={14}/></button>
+                </div>
+              )}
+            </div>
+            
+            {(init.statuses && init.statuses.length > 0) || addingStatusId === init.id ? (
+              <div style={{ display: 'flex', gap: '5px', width: '100%', marginTop: '8px', flexWrap: 'wrap' }}>
+                {init.statuses?.map((st, i) => (
+                  <span key={i} style={{ background: 'var(--accent-danger)', color: '#fff', fontSize: '0.8em', padding: '2px 8px', borderRadius: '12px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    {st} {isDM && <X size={12} style={{ cursor: 'pointer' }} onClick={() => removeStatus(init.id, i)} />}
+                  </span>
+                ))}
+                {addingStatusId === init.id && (
+                   <input type="text" placeholder="입력 후 엔터" autoFocus style={{ fontSize: '0.8em', padding: '2px 6px', borderRadius: '4px', width: '100px', border: '1px solid var(--border-color)', background: 'var(--bg-main)', color: 'var(--text-main)' }} 
+                     onKeyDown={e => { if (e.key === 'Enter') { addStatus(init.id, (e.target as HTMLInputElement).value); setAddingStatusId(null); } }} 
+                     onBlur={() => setAddingStatusId(null)}
+                   />
+                )}
+              </div>
+            ) : null}
           </div>
         ))}
         {initiatives.length === 0 && <p style={{ color: 'var(--text-muted)', fontSize: '0.9em', textAlign: 'center', marginTop: '10px' }}>현재 진행 중인 전투가 없습니다.</p>}
@@ -2239,35 +2641,7 @@ function InitiativeTracker({ sessionId, isDM }: { sessionId: string, isDM: boole
   );
 }
 
-// --- Dice Roller ---
-function DiceRoller() {
-  const [isOpen, setIsOpen] = useState(false);
-  const [result, setResult] = useState<string>('주사위를 굴리세요');
-
-  const roll = (sides: number) => {
-    const val = Math.floor(Math.random() * sides) + 1;
-    setResult(`d${sides} 🎲 ${val}`);
-  };
-
-  return (
-    <>
-      <button className="dice-roller-btn" onClick={() => setIsOpen(!isOpen)}><Dices size={28} /></button>
-      {isOpen && (
-        <div className="dice-panel">
-          <div className="dice-header">
-            주사위 굴리기 <button className="btn btn-danger" style={{ padding: '4px 8px' }} onClick={() => setIsOpen(false)}>X</button>
-          </div>
-          <div className="dice-body">
-            {[4, 6, 8, 10, 12, 20, 100].map(d => (
-              <button key={d} className="dice-btn" onClick={() => roll(d)}>d{d}</button>
-            ))}
-          </div>
-          <div className="dice-result-area">{result}</div>
-        </div>
-      )}
-    </>
-  );
-}
+// --- End of Init ---
 
 function TooltipEditorModal({ initialHtml, onSave, onCancel, onDelete }: { initialHtml: string, onSave: (html: string) => void, onCancel: () => void, onDelete: () => void }) {
   const editorRef = useRef<HTMLDivElement>(null);
@@ -2279,20 +2653,20 @@ function TooltipEditorModal({ initialHtml, onSave, onCancel, onDelete }: { initi
           <span style={{ fontSize: '0.8em', color: 'var(--text-muted)' }}>Shift+Enter: 줄바꿈 / Enter: 단락구분</span>
         </div>
         <div className="toolbar" style={{ marginBottom: '10px', gap: '5px' }}>
-          <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('bold')} title="굵게"><b>B</b></button>
-          <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('italic')} title="기울임"><i>I</i></button>
-          <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('underline')} title="밑줄"><u>U</u></button>
+          <button onPointerDown={e => e.preventDefault()} onClick={() => document.execCommand('bold')} title="굵게"><b>B</b></button>
+          <button onPointerDown={e => e.preventDefault()} onClick={() => document.execCommand('italic')} title="기울임"><i>I</i></button>
+          <button onPointerDown={e => e.preventDefault()} onClick={() => document.execCommand('underline')} title="밑줄"><u>U</u></button>
           <div style={{ width: '1px', height: '20px', background: 'var(--border-color)', margin: '0 5px' }} />
-          <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('fontSize', false, '3')} title="보통">T</button>
-          <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('fontSize', false, '5')} title="크게"><span style={{fontSize: '1.2em'}}>T</span></button>
+          <button onPointerDown={e => e.preventDefault()} onClick={() => document.execCommand('fontSize', false, '3')} title="보통">T</button>
+          <button onPointerDown={e => e.preventDefault()} onClick={() => document.execCommand('fontSize', false, '5')} title="크게"><span style={{fontSize: '1.2em'}}>T</span></button>
           <div style={{ width: '1px', height: '20px', background: 'var(--border-color)', margin: '0 5px' }} />
-          <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('foreColor', false, '#ef4444')} style={{ color: '#ef4444' }} title="빨강">●</button>
-          <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('foreColor', false, '#3b82f6')} style={{ color: '#3b82f6' }} title="파랑">●</button>
-          <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('foreColor', false, '#10b981')} style={{ color: '#10b981' }} title="초록">●</button>
-          <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('foreColor', false, '#f59e0b')} style={{ color: '#f59e0b' }} title="노랑">●</button>
-          <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('foreColor', false, '#000000')} style={{ color: '#000000', fontWeight: 'bold' }} title="검은색">○</button>
+          <button onPointerDown={e => e.preventDefault()} onClick={() => document.execCommand('foreColor', false, '#ef4444')} style={{ color: '#ef4444' }} title="빨강">●</button>
+          <button onPointerDown={e => e.preventDefault()} onClick={() => document.execCommand('foreColor', false, '#3b82f6')} style={{ color: '#3b82f6' }} title="파랑">●</button>
+          <button onPointerDown={e => e.preventDefault()} onClick={() => document.execCommand('foreColor', false, '#10b981')} style={{ color: '#10b981' }} title="초록">●</button>
+          <button onPointerDown={e => e.preventDefault()} onClick={() => document.execCommand('foreColor', false, '#f59e0b')} style={{ color: '#f59e0b' }} title="노랑">●</button>
+          <button onPointerDown={e => e.preventDefault()} onClick={() => document.execCommand('foreColor', false, '#000000')} style={{ color: '#000000', fontWeight: 'bold' }} title="검은색">○</button>
           <div style={{ width: '1px', height: '20px', background: 'var(--border-color)', margin: '0 5px' }} />
-          <button onMouseDown={e => e.preventDefault()} onClick={() => document.execCommand('insertUnorderedList')} title="글머리 기호">List</button>
+          <button onPointerDown={e => e.preventDefault()} onClick={() => document.execCommand('insertUnorderedList')} title="글머리 기호">List</button>
         </div>
         <div 
           ref={editorRef}
@@ -2358,8 +2732,8 @@ function TimerManager({ timers, isDM, onUpdate, onDelete }: { timers: TimerData[
                 ) : (
                   <button className="reveal-btn" onClick={() => onUpdate?.(t.id, { is_running: true })} disabled={t.duration === 0}><Play size={14}/></button>
                 )}
-                <button className="reveal-btn" onClick={() => {
-                  const duration = prompt('시간 설정 (초):', t.duration.toString());
+                <button className="reveal-btn" onClick={async () => {
+                  const duration = await showPrompt('시간 설정 (초):', t.duration.toString());
                   if (duration) onUpdate?.(t.id, { duration: parseInt(duration), is_running: false });
                 }}><RotateCcw size={14}/></button>
                 <button className="reveal-btn" style={{ color: 'var(--accent-danger)' }} onClick={() => onDelete?.(t.id)}><X size={14}/></button>
