@@ -831,7 +831,7 @@ function DMDashboard({ session, user, onBack, openModal, setActiveSession }: any
         filter: `session_id=eq.${session.id}` 
       }, (payload) => {
         if (payload.eventType === 'INSERT') {
-          setCards(prev => [...prev, payload.new as CardData].sort((a,b) => (a.sort_order || 0) - (b.sort_order || 0)));
+          setCards(prev => prev.some(c => c.id === payload.new.id) ? prev : [...prev, payload.new as CardData].sort((a,b) => (a.sort_order || 0) - (b.sort_order || 0)));
         } else if (payload.eventType === 'UPDATE') {
           setCards(prev => prev.map(c => c.id === payload.new.id ? { ...c, ...payload.new } : c));
         } else if (payload.eventType === 'DELETE') {
@@ -848,7 +848,7 @@ function DMDashboard({ session, user, onBack, openModal, setActiveSession }: any
         filter: `session_id=eq.${session.id}` 
       }, (payload) => {
         if (payload.eventType === 'INSERT') {
-          setFolders(prev => [...prev, payload.new as FolderData].sort((a,b) => a.sort_order - b.sort_order));
+          setFolders(prev => prev.some(f => f.id === payload.new.id) ? prev : [...prev, payload.new as FolderData].sort((a,b) => a.sort_order - b.sort_order));
         } else if (payload.eventType === 'UPDATE') {
           setFolders(prev => prev.map(f => f.id === payload.new.id ? { ...f, ...payload.new } : f).sort((a,b) => a.sort_order - b.sort_order));
         } else if (payload.eventType === 'DELETE') {
