@@ -343,107 +343,12 @@ function GlobalDialogs() {
   );
 }
 
-function CampaignWiki({ isOpen, onClose, isDM }: { isOpen: boolean, onClose: () => void, isDM: boolean }) {
-  const [content, setContent] = useState('');
-  const [originalContent, setOriginalContent] = useState('');
-  const [wikiId, setWikiId] = useState<string | null>(null);
-  const [isEditing, setIsEditing] = useState(false);
-  const editorRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (isOpen) {
-      supabase!.from('wikis').select('*').limit(1).then(({ data }) => {
-        if (data && data.length > 0) {
-          setContent(data[0].content || '');
-          setOriginalContent(data[0].content || '');
-          setWikiId(data[0].id);
-        } else {
-          supabase!.from('wikis').insert([{ content: '새로운 캠페인 위키입니다.' }]).select().then(res => {
-            if (res.data && res.data.length > 0) {
-              setContent(res.data[0].content);
-              setOriginalContent(res.data[0].content);
-              setWikiId(res.data[0].id);
-            }
-          });
-        }
-      });
-    } else {
-      setIsEditing(false);
-    }
-  }, [isOpen]);
-
-  const handleSave = async () => {
-    if (!wikiId || !editorRef.current) return;
-    const newContent = editorRef.current.innerHTML;
-    await supabase!.from('wikis').update({ content: newContent }).eq('id', wikiId);
-    setContent(newContent);
-    setOriginalContent(newContent);
-    setIsEditing(false);
-  };
-
-  if (!isOpen) return null;
-
-  return (
-    <div className="card-modal-overlay" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.7)', zIndex: 3000, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }} onClick={onClose}>
-      <div className="card" style={{ width: '100%', maxWidth: '800px', maxHeight: '90vh', background: 'var(--bg-main)', position: 'relative', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
-        <div className="card-header" style={{ marginBottom: '20px', padding: '10px 0', borderBottom: '1px solid var(--border-color)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <h2 style={{ fontSize: '1.4em', color: 'var(--accent-primary)', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}><BookOpen size={24} /> 캠페인 위키</h2>
-            <div style={{ display: 'flex', gap: '10px' }}>
-              {isDM && (
-                <>
-                  {isEditing ? (
-                    <>
-                      <button className="btn" style={{ background: '#4b5563' }} onClick={() => { setIsEditing(false); setContent(originalContent); }}>취소</button>
-                      <button className="btn btn-action" onClick={handleSave}>완료</button>
-                    </>
-                  ) : (
-                    <button className="btn btn-action" onClick={() => setIsEditing(true)}>편집</button>
-                  )}
-                </>
-              )}
-              <button className="btn" style={{ background: '#4b5563' }} onClick={onClose}>닫기</button>
-            </div>
-          </div>
-        </div>
-
-        <div className="card-body" style={{ flex: 1, overflowY: 'auto', paddingRight: '10px' }}>
-          {isEditing ? (
-            <>
-              <div className="toolbar" style={{ marginBottom: '10px', gap: '5px' }}>
-                <button onPointerDown={e => e.preventDefault()} onClick={() => document.execCommand('bold')} title="굵게"><b>B</b></button>
-                <button onPointerDown={e => e.preventDefault()} onClick={() => document.execCommand('italic')} title="기울임"><i>I</i></button>
-                <button onPointerDown={e => e.preventDefault()} onClick={() => document.execCommand('underline')} title="밑줄"><u>U</u></button>
-                <div style={{ width: '1px', height: '20px', background: 'var(--border-color)', margin: '0 5px' }} />
-                <button onPointerDown={e => e.preventDefault()} onClick={() => document.execCommand('fontSize', false, '3')} title="보통">T</button>
-                <button onPointerDown={e => e.preventDefault()} onClick={() => document.execCommand('fontSize', false, '5')} title="크게"><span style={{fontSize: '1.2em'}}>T</span></button>
-                <div style={{ width: '1px', height: '20px', background: 'var(--border-color)', margin: '0 5px' }} />
-                <button onPointerDown={e => e.preventDefault()} onClick={() => document.execCommand('foreColor', false, '#ef4444')} style={{ color: '#ef4444' }} title="빨강">●</button>
-                <button onPointerDown={e => e.preventDefault()} onClick={() => document.execCommand('foreColor', false, '#3b82f6')} style={{ color: '#3b82f6' }} title="파랑">●</button>
-                <button onPointerDown={e => e.preventDefault()} onClick={() => document.execCommand('foreColor', false, '#10b981')} style={{ color: '#10b981' }} title="초록">●</button>
-                <button onPointerDown={e => e.preventDefault()} onClick={() => document.execCommand('foreColor', false, '#f59e0b')} style={{ color: '#f59e0b' }} title="노랑">●</button>
-                <button onPointerDown={e => e.preventDefault()} onClick={() => document.execCommand('insertUnorderedList')} title="글머리 기호">List</button>
-              </div>
-              <div ref={editorRef} className="editor" contentEditable suppressContentEditableWarning dangerouslySetInnerHTML={{ __html: content }} style={{ minHeight: '300px' }} />
-            </>
-          ) : (
-            <div className="editor-content" style={{ minHeight: '300px', background: 'var(--card-bg)', padding: '20px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
-              <ParsedText text={content} stats={{}} />
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
 // --- Main App Logic ---
 function MainApp() {
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [activeSession, setActiveSession] = useState<SessionData | null>(null);
   const [modalImg, setModalImg] = useState<string | null>(null);
-  const [showWiki, setShowWiki] = useState(false);
 
   useEffect(() => {
     const storedUser = localStorage.getItem('dnd_user');
@@ -502,9 +407,6 @@ function MainApp() {
           <Swords color="var(--accent-primary)" /> D&D 5e 세션 허브
         </h2>
         <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-          <button className="btn" style={{ background: 'var(--card-bg)', border: '1px solid var(--border-color)', color: 'var(--text-main)', padding: '6px 12px', display: 'flex', alignItems: 'center', gap: '6px' }} onClick={() => setShowWiki(true)}>
-            <BookOpen size={16} /> <span className="hidden-on-mobile">위키</span>
-          </button>
           <span style={{ color: 'var(--text-muted)', fontSize: '0.9em', marginRight: '10px' }}>
             {user.username} ({user.role === 'dm' ? '마스터' : '플레이어'})
           </span>
@@ -525,7 +427,6 @@ function MainApp() {
       )}
 
       <DiceRoller />
-      <CampaignWiki isOpen={showWiki} onClose={() => setShowWiki(false)} isDM={user?.role === 'dm'} />
 
       {modalImg && (
         <div id="image-modal" className="show" onClick={() => setModalImg(null)}>
@@ -840,6 +741,7 @@ function DMDashboard({ session, user, onBack, openModal, setActiveSession }: any
   const [searchTerm, setSearchTerm] = useState('');
   const [isListMode, setIsListMode] = useState(false);
   const [savedMonsters, setSavedMonsters] = useState<any[]>([]);
+  const [loadSearchTerm, setLoadSearchTerm] = useState('');
   const [activeId, setActiveId] = useState<string | null>(null);
   const [genTargetFolder, setGenTargetFolder] = useState<string | null>(null);
 
@@ -1272,8 +1174,20 @@ function DMDashboard({ session, user, onBack, openModal, setActiveSession }: any
             <div className="card" style={{ width: '90%', maxWidth: '500px', maxHeight: '80vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
               <h3 style={{ marginTop: 0, color: 'var(--accent-primary)' }}>저장된 몬스터 불러오기</h3>
               <p style={{ fontSize: '0.9em', color: 'var(--text-muted)' }}>다른 세션에서 만들었던 몬스터를 복사해옵니다.</p>
+              
+              <div style={{ marginTop: '10px', marginBottom: '15px' }}>
+                <input 
+                  type="text" 
+                  className="input-field" 
+                  placeholder="몬스터 이름 검색..." 
+                  value={loadSearchTerm}
+                  onChange={e => setLoadSearchTerm(e.target.value)}
+                  style={{ width: '100%', padding: '10px' }}
+                />
+              </div>
+
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '15px' }}>
-                {savedMonsters.map(m => (
+                {savedMonsters.filter(m => m.title?.toLowerCase().includes(loadSearchTerm.toLowerCase())).map(m => (
                   <div key={m.id} className="init-item" style={{ cursor: 'pointer' }} onClick={() => {
                     const newCard = {
                       session_id: session.id, type: 'statblock',
